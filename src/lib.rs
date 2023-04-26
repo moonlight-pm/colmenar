@@ -1,8 +1,7 @@
 mod error;
 mod generator;
-mod init;
 mod workload;
 
+pub use error::Error;
 pub use generator::generate;
-pub use init::init;
 pub use workload::Workload;

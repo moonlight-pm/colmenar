@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 genco = "0.17.5"
 heck = "0.4.1"
-openapiv3-extended = "2.2.1"
+openapiv3 = { version = "1.0.2", path = "../Community/openapiv3" }
 serde = "1.0.160"
 serde_json = "1.0.96"
 serde_yaml = "0.9.21"
