@@ -1,5 +1,7 @@
 test:
-	cargo test -- --test-threads 1 --nocapture
+	# rm -rf tests/cycle
+	cargo run tests/fixtures/cycle.yaml tests/cycle
+	cargo test -- --nocapture
 
 watch-test:
 	cargo watch -s 'make test' -i 'tests/cycle'

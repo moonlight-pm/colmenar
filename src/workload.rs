@@ -1,13 +1,10 @@
-use crate::{err, generate, Error};
+use crate::{err, generate::*, Error, Model};
 use openapiv3::OpenAPI;
-use std::{fs::File, io::Read, path::Path};
+use std::{fs::File, io::Read, path::Path, process::Command};
 
-#[derive(Debug)]
 pub struct Workload {
-    pub input: String,
-    pub output: String,
-    pub extension: String,
-    pub api: OpenAPI,
+    output: String,
+    api: OpenAPI,
 }
 
 impl Workload {
@@ -60,14 +57,52 @@ impl Workload {
             }
         };
         Ok(Self {
-            input,
             output,
-            extension,
             api: schema,
         })
     }
 
     pub fn generate(&self) -> Result<(), Error> {
-        generate(self)
+        let mut models = Vec::new();
+        for (name, schema) in self.api.components.as_ref().unwrap().schemas.iter() {
+            let schema = schema.as_item().unwrap();
+            eprintln!("{name}: {schema:#?}");
+            models.extend(Model::discover(name, schema)?);
+            // generate_model(workload, name, schema)?;
+            if name == "AccountState" {
+                break;
+            }
+        }
+        self.write_models(models)?;
+        self.format()?;
+        Ok(())
+    }
+
+    pub fn write_models(&self, models: Vec<Model>) -> Result<(), Error> {
+        write_tokens(
+            &format!("{}/models/mod.rs", self.output),
+            quote!(
+                $(for model in &models => pub mod $(&model.path);)
+                $['\n']
+                $(for model in &models => pub use $(&model.path)::$(&model.name);)
+            ),
+        )?;
+        write_tokens(
+            &format!("{}/mod.rs", self.output),
+            quote!(
+                pub mod models;
+            ),
+        )?;
+        for model in models {
+            model.write(&self.output)?;
+        }
+        Ok(())
+    }
+
+    fn format(&self) -> Result<(), Error> {
+        Command::new("bash")
+            .args(["-c", &format!("rustfmt {}/**/*.rs", self.output)])
+            .status()?;
+        Ok(())
     }
 }

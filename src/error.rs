@@ -6,5 +6,3 @@ macro_rules! err {
         Err(std::io::Error::new(std::io::ErrorKind::Other, format!($fmt $(, $($arg)+)?)).into())
     }};
 }
-
-// pub(crate) use err;
