@@ -63,22 +63,22 @@ impl Workload {
     }
 
     pub fn generate(&self) -> Result<(), Error> {
-        let mut models = Vec::new();
         for (name, schema) in self.api.components.as_ref().unwrap().schemas.iter() {
             let schema = schema.as_item().unwrap();
             eprintln!("{name}: {schema:#?}");
-            models.extend(Model::discover(name, schema)?);
+            Model::discover(name, schema)?;
             // generate_model(workload, name, schema)?;
             if name == "AccountState" {
                 break;
             }
         }
-        self.write_models(models)?;
+        self.write_models()?;
         self.format()?;
         Ok(())
     }
 
-    pub fn write_models(&self, models: Vec<Model>) -> Result<(), Error> {
+    pub fn write_models(&self) -> Result<(), Error> {
+        let models = Model::all();
         write_tokens(
             &format!("{}/models/mod.rs", self.output),
             quote!(
