@@ -1,4 +1,4 @@
-use colmenar::Workload;
+use colmenar::{Error, Workload};
 
 fn main() {
     match run() {
@@ -9,7 +9,7 @@ fn main() {
     }
 }
 
-fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+fn run() -> Result<(), Error> {
     let args: Vec<String> = std::env::args().collect();
     if args.len() != 3 {
         println!("Usage: {} <schema-file> <output-directory>", args[0]);

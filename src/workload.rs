@@ -3,7 +3,7 @@ use openapiv3::OpenAPI;
 use std::{fs::File, io::Read, path::Path, process::Command};
 
 pub struct Workload {
-    api: OpenAPI,
+    schema: OpenAPI,
     output: String,
 }
 
@@ -26,6 +26,7 @@ impl Workload {
             match std::fs::create_dir(&output) {
                 Ok(_) => {
                     std::fs::create_dir(&format!("{output}/models")).unwrap();
+                    std::fs::create_dir(&format!("{output}/operations")).unwrap();
                 }
                 Err(e) => {
                     return err!("Error: could not create directory {}: {}", output, e);
@@ -55,19 +56,15 @@ impl Workload {
             }
         };
         Ok(Self {
-            api: schema,
+            schema,
             output: output.to_string(),
         })
     }
 
     pub fn generate(&self) -> Result<(), Error> {
-        for (name, schema) in self.api.components.as_ref().unwrap().schemas.iter() {
+        for (name, schema) in self.schema.components.as_ref().unwrap().schemas.iter() {
             let schema = schema.as_item().unwrap();
-            eprintln!("{name}: {schema:#?}");
             Model::discover(name, schema)?;
-            // if name == "DockerfileCredentials" {
-            //     break;
-            // }
         }
         self.write_models()?;
         self.format()?;

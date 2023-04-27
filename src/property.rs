@@ -1,8 +1,7 @@
+use crate::{err, generate::*, Array, Error, Model};
 use heck::{ToSnakeCase, ToUpperCamelCase};
 use indexmap::IndexMap;
 use openapiv3::{ReferenceOr, Schema, SchemaKind, Type};
-
-use crate::{err, generate::*, Array, Error, Model};
 
 #[derive(Clone)]
 pub struct Property {
@@ -84,7 +83,18 @@ impl Property {
                         SchemaKind::Type(Type::Array(_)) => {
                             property.ty = Array::discover(&ty, item)?;
                         }
+                        SchemaKind::Any(_) => {
+                            Model::discover(&ty, item)?;
+                            let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
+                            property.ty = quote!($ty)
+                        }
                         SchemaKind::AllOf { .. } => {
+                            Model::discover(&ty, item)?;
+                            let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
+                            property.ty = quote!($ty);
+                        }
+                        SchemaKind::OneOf { .. } => {
+                            let ty = format!("{}_{name}", model.name).to_upper_camel_case();
                             Model::discover(&ty, item)?;
                             let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
                             property.ty = quote!($ty);

@@ -1,4 +1,9 @@
-use crate::{constants::KEYWORDS, err, generate::*, Array, Enumeration, Error, Property};
+use crate::{
+    constants::{GREEK, KEYWORDS},
+    err,
+    generate::*,
+    Array, Enumeration, Error, Property,
+};
 use heck::{ToSnakeCase, ToUpperCamelCase};
 use once_cell::sync::OnceCell;
 use openapiv3::{ReferenceOr, Schema, SchemaKind, Type};
@@ -92,7 +97,6 @@ impl Model {
                     match schema {
                         ReferenceOr::Reference { reference, .. } => {
                             let reference = reference.split('/').last().unwrap();
-                            println!("reference: {}", reference);
                             let reference = Model::get(&reference).unwrap();
                             model.properties.extend(reference.properties.clone());
                         }
@@ -111,12 +115,51 @@ impl Model {
                                     &schema.properties,
                                 )?;
                             }
+                            SchemaKind::OneOf { one_of } => {
+                                let mut types = Vec::new();
+                                let mut g = 0;
+                                for schema in one_of.iter() {
+                                    match schema {
+                                        ReferenceOr::Reference { reference, .. } => {
+                                            types.push(
+                                                reference.split('/').last().unwrap().to_string(),
+                                            );
+                                        }
+                                        ReferenceOr::Item(item) => {
+                                            let ty = format!("{name}_{}", GREEK[g])
+                                                .to_upper_camel_case();
+                                            Model::discover(&ty, item)?;
+                                            types.push(ty);
+                                            g += 1;
+                                        }
+                                    }
+                                }
+                                model.enumeration = Some(Enumeration::Object(types));
+                            }
                             _ => {
                                 return err!("Unhandled type for '{name}': {:?}", item.schema_kind,)
                             }
                         },
                     }
                 }
+            }
+            SchemaKind::OneOf { one_of } => {
+                let mut types = Vec::new();
+                let mut g = 0;
+                for schema in one_of.iter() {
+                    match schema {
+                        ReferenceOr::Reference { reference, .. } => {
+                            types.push(reference.split('/').last().unwrap().to_string());
+                        }
+                        ReferenceOr::Item(item) => {
+                            let ty = format!("{name}_{}", GREEK[g]).to_upper_camel_case();
+                            Model::discover(&ty, item)?;
+                            types.push(ty);
+                            g += 1;
+                        }
+                    }
+                }
+                model.enumeration = Some(Enumeration::Object(types));
             }
             _ => return err!("Unhandled kind for '{name}': {:?}", schema.schema_kind),
         };
@@ -198,6 +241,17 @@ impl Model {
                                     }
                                 )
                             }
+                            Enumeration::Object(types) => {
+                                let types = types.iter().map(|t| rust::import(format!("super::{}", t.to_snake_case()), t)).collect::<Vec<_>>();
+                                quote!(
+                                    #[derive(Debug, Clone, PartialEq, $import_serialize, $import_deserialize)]
+                                    pub enum $(&self.name) {
+                                        $(for t in types =>
+                                            $(&t)($(&t)),
+                                        )
+                                    }
+                                )
+                            }
                         }
                     }
                     None => {
@@ -207,11 +261,11 @@ impl Model {
                                 $(for property in &self.properties =>
                                     $(property.description.as_ref().map(|description| quote!(#[doc=$(quoted(description))])))
                                     $(if !property.required { #[serde(skip_serializing_if = "Option::is_none")] })
-                                    $(if KEYWORDS.contains(&property.name.as_str()) {
+                                    $(if KEYWORDS.contains(&property.name.to_snake_case().as_str()) {
                                         #[serde(rename = $(quoted(&property.name)))]
                                         pub $(&format!("r#{}", property.name))
                                     } else {
-                                        pub $(&property.name)
+                                        pub $(&property.name.to_snake_case())
                                     }):
                                     $(if property.required && !property.nullable { $(&property.ty) } else { Option<$(&property.ty)> }),
                                 )

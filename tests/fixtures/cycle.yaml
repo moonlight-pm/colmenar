@@ -15540,26 +15540,7 @@ components:
               type: string
               description: A set command to be run if a signal is called.
         source:
-          type: object
-          required:
-            - type
-            - details
-          properties:
-            type:
-              type: string
-            details:
-              type: object
-              required:
-                - id
-                - stack_id
-                - origin
-              properties:
-                id:
-                  type: string
-                stack_id:
-                  type: string
-                origin:
-                  $ref: '#/components/schemas/ImageSourceOrigin'
+          $ref: '#/components/schemas/ImageSource'
         creator:
           $ref: '#/components/schemas/CreatorScope'
         factory:
@@ -16363,40 +16344,9 @@ components:
         spec:
           $ref: '#/components/schemas/StackSpec'
         about:
-          type: object
-          description: Information about the stack build.
-          required:
-            - version
-            - description
-          properties:
-            version:
-              type: string
-              description: Information about the version of the stack.
-            description:
-              type: string
-              description: Information describing the stack
-            git_commit:
-              $ref: '#/components/schemas/StackGitCommit'
+          $ref: '#/components/schemas/StackBuildAbout'
         instructions:
-          type: object
-          description: Git information on where to pull stack resources from.
-          properties:
-            git:
-              type: object
-              description: Git information specifics.
-              required:
-                - type
-                - value
-              properties:
-                type:
-                  type: string
-                  description: The type of information the user is passing.
-                  enum:
-                    - hash
-                    - tag
-                value:
-                  type: string
-                  description: The actual value to be passed.
+          $ref: '#/components/schemas/StackBuildInstructions'
         events:
           title: StackBuildEvents
           type: object
@@ -19794,37 +19744,26 @@ components:
     PipelineSteps:
       title: PipelineStep
       description: A step for a pipeline stage.
-      allOf:
-        - type: object
-          properties:
-            identifier:
-              type: string
-              description: An identifier for the step.
-            options:
-              type: object
-              properties:
-                skip:
-                  type: boolean
-        - oneOf:
-            - $ref: '#/components/schemas/ImageSourceCreateStep'
-            - $ref: '#/components/schemas/ImageCreateStep'
-            - $ref: '#/components/schemas/ImageImportStep'
-            - $ref: '#/components/schemas/ImagesPruneStep'
-            - $ref: '#/components/schemas/ContainerCreateStep'
-            - $ref: '#/components/schemas/ContainerStartStep'
-            - $ref: '#/components/schemas/ContainerStopStep'
-            - $ref: '#/components/schemas/ContainerDeleteStep'
-            - $ref: '#/components/schemas/ContainerReimageStep'
-            - $ref: '#/components/schemas/ContainerRestartStep'
-            - $ref: '#/components/schemas/EnvironmentCreateStep'
-            - $ref: '#/components/schemas/EnvironmentStartStep'
-            - $ref: '#/components/schemas/EnvironmentStopStep'
-            - $ref: '#/components/schemas/EnvironmentDeleteStep'
-            - $ref: '#/components/schemas/StackBuildCreateStep'
-            - $ref: '#/components/schemas/StackBuildGenerateStep'
-            - $ref: '#/components/schemas/StackBuildDeployStep'
-            - $ref: '#/components/schemas/SleepStep'
-            - $ref: '#/components/schemas/WebhookPostStep'
+      oneOf:
+        - $ref: '#/components/schemas/ImageSourceCreateStep'
+        - $ref: '#/components/schemas/ImageCreateStep'
+        - $ref: '#/components/schemas/ImageImportStep'
+        - $ref: '#/components/schemas/ImagesPruneStep'
+        - $ref: '#/components/schemas/ContainerCreateStep'
+        - $ref: '#/components/schemas/ContainerStartStep'
+        - $ref: '#/components/schemas/ContainerStopStep'
+        - $ref: '#/components/schemas/ContainerDeleteStep'
+        - $ref: '#/components/schemas/ContainerReimageStep'
+        - $ref: '#/components/schemas/ContainerRestartStep'
+        - $ref: '#/components/schemas/EnvironmentCreateStep'
+        - $ref: '#/components/schemas/EnvironmentStartStep'
+        - $ref: '#/components/schemas/EnvironmentStopStep'
+        - $ref: '#/components/schemas/EnvironmentDeleteStep'
+        - $ref: '#/components/schemas/StackBuildCreateStep'
+        - $ref: '#/components/schemas/StackBuildGenerateStep'
+        - $ref: '#/components/schemas/StackBuildDeployStep'
+        - $ref: '#/components/schemas/SleepStep'
+        - $ref: '#/components/schemas/WebhookPostStep'
     PipelineStage:
       title: PipelineStage
       type: object

@@ -4,6 +4,7 @@ use openapiv3::{Schema, SchemaKind, Type};
 pub enum Enumeration {
     String(Vec<String>),
     Integer(Vec<i64>),
+    Object(Vec<String>),
 }
 
 impl Enumeration {

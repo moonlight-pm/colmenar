@@ -1,8 +1,6 @@
-use crate::{generate::*, Model};
+use crate::{err, generate::*, Error, Model};
 use heck::ToSnakeCase;
 use openapiv3::{ReferenceOr, Schema, SchemaKind, Type};
-
-use crate::{err, Error};
 
 pub struct Array {}
 
@@ -16,11 +14,23 @@ impl Array {
                     quote!(Vec<$ty>)
                 }
                 ReferenceOr::Item(item) => match &item.schema_kind {
-                    SchemaKind::Type(Type::String(_)) => {
-                        quote!(Vec<String>)
+                    SchemaKind::Type(Type::String(string)) => {
+                        if string.enumeration.is_empty() {
+                            quote!(Vec<String>)
+                        } else {
+                            Model::discover(name, item)?;
+                            let ty = rust::import(format!("super::{}", name.to_snake_case()), name);
+                            quote!(Vec<$ty>)
+                        }
                     }
-                    SchemaKind::Type(Type::Integer(_)) => {
-                        quote!(Vec<i64>)
+                    SchemaKind::Type(Type::Integer(integer)) => {
+                        if integer.enumeration.is_empty() {
+                            quote!(Vec<i64>)
+                        } else {
+                            Model::discover(name, item)?;
+                            let ty = rust::import(format!("super::{}", name.to_snake_case()), name);
+                            quote!(Vec<$ty>)
+                        }
                     }
                     SchemaKind::Type(Type::Object(_)) => {
                         Model::discover(name, item)?;
