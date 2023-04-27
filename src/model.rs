@@ -1,4 +1,4 @@
-use crate::{err, generate::*, Error, Property};
+use crate::{err, generate::*, Enumeration, Error, Property};
 use heck::{ToSnakeCase, ToUpperCamelCase};
 use indexmap::IndexMap;
 use once_cell::sync::OnceCell;
@@ -14,7 +14,7 @@ pub struct Model {
     pub ty: Option<Tokens>,
     pub description: Option<String>,
     pub properties: Vec<Property>,
-    pub enumeration: Vec<String>,
+    pub enumeration: Option<Enumeration>,
 }
 
 impl Model {
@@ -53,20 +53,21 @@ impl Model {
             ty: None,
             description: None,
             properties: Vec::new(),
-            enumeration: Vec::new(),
+            enumeration: None,
         };
 
         model.description = schema.schema_data.description.clone();
         match &schema.schema_kind {
-            SchemaKind::Type(Type::String(string)) => {
-                if string.enumeration.is_empty() {
+            SchemaKind::Type(Type::String(_)) => {
+                model.enumeration = Enumeration::discover(schema);
+                if model.enumeration.is_none() {
                     model.ty = Some(quote!(String));
-                } else {
-                    model.enumeration = string
-                        .enumeration
-                        .iter()
-                        .filter_map(|s| s.as_ref().map(|s| s.to_upper_camel_case()))
-                        .collect();
+                }
+            }
+            SchemaKind::Type(Type::Integer(_)) => {
+                model.enumeration = Enumeration::discover(schema);
+                if model.enumeration.is_none() {
+                    model.ty = Some(quote!(i64));
                 }
             }
             SchemaKind::Type(Type::Object(object)) => {
@@ -123,12 +124,22 @@ impl Model {
                     property.ty = quote!($ty);
                 }
                 ReferenceOr::Item(item) => {
+                    property.description = item.schema_data.description.clone();
                     let ty = format!("{}_{name}", self.name).to_upper_camel_case();
                     match &item.schema_kind {
                         SchemaKind::Type(Type::String(string)) => {
-                            property.description = item.schema_data.description.clone();
                             if string.enumeration.is_empty() {
                                 property.ty = quote!(String)
+                            } else {
+                                Model::discover(&ty, item)?;
+                                let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
+                                property.ty = quote!($ty)
+                            }
+                        }
+                        SchemaKind::Type(Type::Boolean {}) => property.ty = quote!(bool),
+                        SchemaKind::Type(Type::Integer(integer)) => {
+                            if integer.enumeration.is_empty() {
+                                property.ty = quote!(i64)
                             } else {
                                 Model::discover(&ty, item)?;
                                 let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
@@ -140,7 +151,9 @@ impl Model {
                             let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
                             property.ty = quote!($ty)
                         }
-                        _ => return err!("Unhandled type: {:?} {name:?}", item.schema_kind,),
+                        _ => {
+                            return err!("Unhandled property type: {:?} {name:?}", item.schema_kind,)
+                        }
                     }
                 }
             };
@@ -166,23 +179,44 @@ impl Model {
                 pub type $(&self.name) = $ty;
             ),
             None =>  {
-                if self.enumeration.is_empty() {
-                    quote!(
-                        pub struct $(&self.name) {
-                            $(for property in &self.properties =>
-                                $(property.description.as_ref().map(|description| quote!(#[doc=$(quoted(description))])))
-                                pub $(&property.name): $(&property.ty),
-                            )
+                match &self.enumeration {
+                    Some(enumeration) => {
+                        match enumeration {
+                            Enumeration::String(values) => {
+                                let values = values.into_iter().map(|s| {
+                                    if s.chars().next().unwrap().is_digit(10) {
+                                        format!("{}{}", &self.name, s)
+                                    } else {
+                                        s.to_string()
+                                    }
+                                }).collect::<Vec<_>>();
+                                quote!(
+                                    pub enum $(&self.name) {
+                                        $(for value in values => $value,)
+                                    }
+                                )
+                            }
+                            Enumeration::Integer(values) => {
+                                quote!(
+                                    pub enum $(&self.name) {
+                                        $(for value in values =>
+                                            $(&self.name)$(*value) = $(*value),
+                                        )
+                                    }
+                                )
+                            }
                         }
-                    )
-                } else {
-                    quote!(
-                        pub enum $(&self.name) {
-                            $(for value in &self.enumeration =>
-                                $value,
-                            )
-                        }
-                    )
+                    }
+                    None => {
+                        quote!(
+                            pub struct $(&self.name) {
+                                $(for property in &self.properties =>
+                                    $(property.description.as_ref().map(|description| quote!(#[doc=$(quoted(description))])))
+                                    pub $(&property.name): $(if property.required { $(&property.ty) } else { Option<$(&property.ty)> }),
+                                )
+                            }
+                        )
+                    }
                 }
             }
         });

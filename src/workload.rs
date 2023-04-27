@@ -67,8 +67,7 @@ impl Workload {
             let schema = schema.as_item().unwrap();
             eprintln!("{name}: {schema:#?}");
             Model::discover(name, schema)?;
-            // generate_model(workload, name, schema)?;
-            if name == "AccountState" {
+            if name == "Error" {
                 break;
             }
         }
