@@ -1,6 +1,5 @@
-use crate::{constants::KEYWORDS, err, generate::*, Enumeration, Error, Property};
+use crate::{constants::KEYWORDS, err, generate::*, Array, Enumeration, Error, Property};
 use heck::{ToSnakeCase, ToUpperCamelCase};
-use indexmap::IndexMap;
 use once_cell::sync::OnceCell;
 use openapiv3::{ReferenceOr, Schema, SchemaKind, Type};
 use std::{collections::HashMap, sync::Mutex};
@@ -29,11 +28,14 @@ impl Model {
     }
 
     fn add(model: Model) {
-        MODELS
+        let mut models = MODELS
             .get_or_init(|| Mutex::new(HashMap::new()))
             .lock()
-            .unwrap()
-            .insert(model.name.clone(), model);
+            .unwrap();
+        if models.contains_key(&model.name) {
+            panic!("Model {} already exists", model.name);
+        }
+        models.insert(model.name.clone(), model);
     }
 
     fn get(name: &str) -> Option<Model> {
@@ -55,13 +57,16 @@ impl Model {
             properties: Vec::new(),
             enumeration: None,
         };
-
         model.description = schema.schema_data.description.clone();
         match &schema.schema_kind {
             SchemaKind::Type(Type::String(_)) => {
                 model.enumeration = Enumeration::discover(schema);
                 if model.enumeration.is_none() {
-                    model.ty = Some(quote!(String));
+                    if model.name == "DateTime" {
+                        model.ty = Some(quote!(chrono::DateTime<chrono::Utc>));
+                    } else {
+                        model.ty = Some(quote!(String));
+                    }
                 }
             }
             SchemaKind::Type(Type::Integer(_)) => {
@@ -70,128 +75,52 @@ impl Model {
                     model.ty = Some(quote!(i64));
                 }
             }
+            SchemaKind::Type(Type::Array(_)) => {
+                model.ty = Some(Array::discover(
+                    &format!("{name}_Item").to_upper_camel_case(),
+                    schema,
+                )?);
+            }
             SchemaKind::Type(Type::Object(object)) => {
-                model.discover_properties(&object.required, &object.properties)?;
+                Property::discover(&mut model, &object.required, &object.properties)?;
+            }
+            SchemaKind::Any(schema) => {
+                Property::discover(&mut model, &schema.required, &schema.properties)?;
             }
             SchemaKind::AllOf { all_of } => {
                 for schema in all_of.iter() {
                     match schema {
                         ReferenceOr::Reference { reference, .. } => {
-                            let reference =
-                                reference.split('/').last().unwrap().to_upper_camel_case();
+                            let reference = reference.split('/').last().unwrap();
+                            println!("reference: {}", reference);
                             let reference = Model::get(&reference).unwrap();
                             model.properties.extend(reference.properties.clone());
                         }
                         ReferenceOr::Item(item) => match &item.schema_kind {
                             SchemaKind::Type(Type::Object(object)) => {
-                                model.discover_properties(&object.required, &object.properties)?;
+                                Property::discover(
+                                    &mut model,
+                                    &object.required,
+                                    &object.properties,
+                                )?;
                             }
                             SchemaKind::Any(schema) => {
-                                model.discover_properties(&schema.required, &schema.properties)?;
+                                Property::discover(
+                                    &mut model,
+                                    &schema.required,
+                                    &schema.properties,
+                                )?;
                             }
-                            _ => return err!("Unhandled type: {:?} {name:?}", item.schema_kind,),
+                            _ => {
+                                return err!("Unhandled type for '{name}': {:?}", item.schema_kind,)
+                            }
                         },
                     }
                 }
             }
-            _ => return err!("Unhandled kind {:?}", schema.schema_kind),
+            _ => return err!("Unhandled kind for '{name}': {:?}", schema.schema_kind),
         };
         Model::add(model);
-        Ok(())
-    }
-
-    pub fn discover_properties(
-        &mut self,
-        required: &Vec<String>,
-        indexmap: &IndexMap<String, ReferenceOr<Box<Schema>>>,
-    ) -> Result<(), Error> {
-        for (name, schema) in indexmap.iter() {
-            let mut property = Property::new(name);
-            property.required = required.contains(name);
-            match schema {
-                ReferenceOr::Reference {
-                    reference,
-                    description,
-                    ..
-                } => {
-                    property.description = description.clone();
-                    let ty = reference.split("/").last().unwrap().to_string();
-                    let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
-                    property.ty = quote!($ty);
-                }
-                ReferenceOr::Item(item) => {
-                    property.description = item.schema_data.description.clone();
-                    let ty = format!("{}_{name}", self.name).to_upper_camel_case();
-                    match &item.schema_kind {
-                        SchemaKind::Type(Type::String(string)) => {
-                            if string.enumeration.is_empty() {
-                                property.ty = quote!(String)
-                            } else {
-                                Model::discover(&ty, item)?;
-                                let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
-                                property.ty = quote!($ty)
-                            }
-                        }
-                        SchemaKind::Type(Type::Boolean {}) => property.ty = quote!(bool),
-                        SchemaKind::Type(Type::Integer(integer)) => {
-                            if integer.enumeration.is_empty() {
-                                property.ty = quote!(i64)
-                            } else {
-                                Model::discover(&ty, item)?;
-                                let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
-                                property.ty = quote!($ty)
-                            }
-                        }
-                        SchemaKind::Type(Type::Object(_)) => {
-                            Model::discover(&ty, item)?;
-                            let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
-                            property.ty = quote!($ty)
-                        }
-                        SchemaKind::Type(Type::Array(array)) => {
-                            match array.items.as_ref().unwrap() {
-                                ReferenceOr::Reference { reference, .. } => {
-                                    let ty = reference.split("/").last().unwrap().to_string();
-                                    let ty =
-                                        rust::import(format!("super::{}", ty.to_snake_case()), ty);
-                                    property.ty = quote!(Vec<$ty>);
-                                }
-                                ReferenceOr::Item(item) => match &item.schema_kind {
-                                    // SchemaKind::Type(Type::String(_)) => {
-                                    //     property.ty = quote!(Vec<String>);
-                                    // }
-                                    // SchemaKind::Type(Type::Integer(_)) => {
-                                    //     property.ty = quote!(Vec<i64>);
-                                    // }
-                                    SchemaKind::Type(Type::Object(_)) => {
-                                        Model::discover(&ty, item)?;
-                                        let ty = rust::import(
-                                            format!("super::{}", ty.to_snake_case()),
-                                            ty,
-                                        );
-                                        property.ty = quote!(Vec<$ty>);
-                                    }
-                                    _ => {
-                                        return err!(
-                                            "Unhandled array type: {:?} {name:?}",
-                                            item.schema_kind,
-                                        )
-                                    }
-                                },
-                            }
-                        }
-                        SchemaKind::AllOf { .. } => {
-                            Model::discover(&ty, item)?;
-                            let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
-                            property.ty = quote!($ty);
-                        }
-                        _ => {
-                            return err!("Unhandled property type: {:?} {name:?}", item.schema_kind,)
-                        }
-                    }
-                }
-            };
-            self.properties.push(property);
-        }
         Ok(())
     }
 
@@ -226,7 +155,7 @@ impl Model {
                                     }
                                 }).collect::<Vec<_>>();
                                 quote!(
-                                    #[derive(Debug, Clone, PartialEq, Eq, Hash, $import_serialize, $import_deserialize)]
+                                    #[derive(Debug, Clone, PartialEq, $import_serialize, $import_deserialize)]
                                     pub enum $(&self.name) {
                                         $(for v in range =>
                                             #[serde(rename = $(quoted(&values[v])))]
@@ -261,7 +190,7 @@ impl Model {
                             }
                             Enumeration::Integer(values) => {
                                 quote!(
-                                    #[derive(Debug, Clone, PartialEq, Eq, Hash, $import_serialize, $import_deserialize)]
+                                    #[derive(Debug, Clone, PartialEq, $import_serialize, $import_deserialize)]
                                     pub enum $(&self.name) {
                                         $(for value in values =>
                                             $(&self.name)$(*value) = $(*value),
@@ -273,17 +202,18 @@ impl Model {
                     }
                     None => {
                         quote!(
-                            #[derive(Debug, Clone, PartialEq, Eq, Hash, $import_serialize, $import_deserialize)]
+                            #[derive(Debug, Clone, PartialEq, $import_serialize, $import_deserialize)]
                             pub struct $(&self.name) {
                                 $(for property in &self.properties =>
                                     $(property.description.as_ref().map(|description| quote!(#[doc=$(quoted(description))])))
+                                    $(if !property.required { #[serde(skip_serializing_if = "Option::is_none")] })
                                     $(if KEYWORDS.contains(&property.name.as_str()) {
                                         #[serde(rename = $(quoted(&property.name)))]
                                         pub $(&format!("r#{}", property.name))
                                     } else {
                                         pub $(&property.name)
                                     }):
-                                    $(if property.required { $(&property.ty) } else { Option<$(&property.ty)> }),
+                                    $(if property.required && !property.nullable { $(&property.ty) } else { Option<$(&property.ty)> }),
                                 )
                             }
                         )

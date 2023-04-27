@@ -3,14 +3,12 @@ use openapiv3::OpenAPI;
 use std::{fs::File, io::Read, path::Path, process::Command};
 
 pub struct Workload {
-    output: String,
     api: OpenAPI,
+    output: String,
 }
 
 impl Workload {
-    pub fn new<S: AsRef<str>>(input: S, output: S) -> Result<Self, Error> {
-        let input = input.as_ref().to_string();
-        let output = output.as_ref().to_string();
+    pub fn new(input: &str, output: &str) -> Result<Self, Error> {
         if !std::path::Path::new(&input).exists() {
             return err!("Error: file does not exist: {}", input);
         }
@@ -57,8 +55,8 @@ impl Workload {
             }
         };
         Ok(Self {
-            output,
             api: schema,
+            output: output.to_string(),
         })
     }
 
@@ -67,9 +65,9 @@ impl Workload {
             let schema = schema.as_item().unwrap();
             eprintln!("{name}: {schema:#?}");
             Model::discover(name, schema)?;
-            if name == "HubState" {
-                break;
-            }
+            // if name == "DockerfileCredentials" {
+            //     break;
+            // }
         }
         self.write_models()?;
         self.format()?;

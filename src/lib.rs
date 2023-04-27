@@ -1,3 +1,4 @@
+mod array;
 mod constants;
 mod enumeration;
 mod error;
@@ -6,6 +7,7 @@ mod model;
 mod property;
 mod workload;
 
+pub use array::Array;
 pub use enumeration::Enumeration;
 pub use error::Error;
 pub use model::Model;
