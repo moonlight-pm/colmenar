@@ -67,7 +67,7 @@ impl Workload {
             let schema = schema.as_item().unwrap();
             eprintln!("{name}: {schema:#?}");
             Model::discover(name, schema)?;
-            if name == "Error" {
+            if name == "HubState" {
                 break;
             }
         }

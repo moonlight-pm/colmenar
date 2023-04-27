@@ -1,4 +1,4 @@
-use crate::{err, generate::*, Enumeration, Error, Property};
+use crate::{constants::KEYWORDS, err, generate::*, Enumeration, Error, Property};
 use heck::{ToSnakeCase, ToUpperCamelCase};
 use indexmap::IndexMap;
 use once_cell::sync::OnceCell;
@@ -77,12 +77,8 @@ impl Model {
                 for schema in all_of.iter() {
                     match schema {
                         ReferenceOr::Reference { reference, .. } => {
-                            let reference = reference
-                                .as_str()
-                                .split('/')
-                                .last()
-                                .unwrap()
-                                .to_upper_camel_case();
+                            let reference =
+                                reference.split('/').last().unwrap().to_upper_camel_case();
                             let reference = Model::get(&reference).unwrap();
                             model.properties.extend(reference.properties.clone());
                         }
@@ -151,6 +147,43 @@ impl Model {
                             let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
                             property.ty = quote!($ty)
                         }
+                        SchemaKind::Type(Type::Array(array)) => {
+                            match array.items.as_ref().unwrap() {
+                                ReferenceOr::Reference { reference, .. } => {
+                                    let ty = reference.split("/").last().unwrap().to_string();
+                                    let ty =
+                                        rust::import(format!("super::{}", ty.to_snake_case()), ty);
+                                    property.ty = quote!(Vec<$ty>);
+                                }
+                                ReferenceOr::Item(item) => match &item.schema_kind {
+                                    // SchemaKind::Type(Type::String(_)) => {
+                                    //     property.ty = quote!(Vec<String>);
+                                    // }
+                                    // SchemaKind::Type(Type::Integer(_)) => {
+                                    //     property.ty = quote!(Vec<i64>);
+                                    // }
+                                    SchemaKind::Type(Type::Object(_)) => {
+                                        Model::discover(&ty, item)?;
+                                        let ty = rust::import(
+                                            format!("super::{}", ty.to_snake_case()),
+                                            ty,
+                                        );
+                                        property.ty = quote!(Vec<$ty>);
+                                    }
+                                    _ => {
+                                        return err!(
+                                            "Unhandled array type: {:?} {name:?}",
+                                            item.schema_kind,
+                                        )
+                                    }
+                                },
+                            }
+                        }
+                        SchemaKind::AllOf { .. } => {
+                            Model::discover(&ty, item)?;
+                            let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
+                            property.ty = quote!($ty);
+                        }
                         _ => {
                             return err!("Unhandled property type: {:?} {name:?}", item.schema_kind,)
                         }
@@ -162,11 +195,12 @@ impl Model {
         Ok(())
     }
 
-    pub fn add_property(&mut self, property: Property) {
-        self.properties.push(property);
-    }
-
     pub fn write(&self, dir: &str) -> Result<(), Error> {
+        let import_serialize = rust::import("serde", "Serialize");
+        let import_deserialize = rust::import("serde", "Deserialize");
+        // let import_display = rust::import("std::fmt", "Display");
+        // let import_formatter = rust::import("std::fmt", "Formatter");
+        // let import_fromstr = rust::import("std::str", "FromStr");
         let path = format!("{dir}/models/{}.rs", self.path);
         let mut tokens = Tokens::new();
         if let Some(description) = &self.description {
@@ -183,21 +217,51 @@ impl Model {
                     Some(enumeration) => {
                         match enumeration {
                             Enumeration::String(values) => {
-                                let values = values.into_iter().map(|s| {
+                                let range = 0..values.len();
+                                let variants = values.into_iter().map(|s| {
                                     if s.chars().next().unwrap().is_digit(10) {
-                                        format!("{}{}", &self.name, s)
+                                        format!("{}{}", &self.name, s).to_upper_camel_case()
                                     } else {
-                                        s.to_string()
+                                        s.to_upper_camel_case()
                                     }
                                 }).collect::<Vec<_>>();
                                 quote!(
+                                    #[derive(Debug, Clone, PartialEq, Eq, Hash, $import_serialize, $import_deserialize)]
                                     pub enum $(&self.name) {
-                                        $(for value in values => $value,)
+                                        $(for v in range =>
+                                            #[serde(rename = $(quoted(&values[v])))]
+                                            $(&variants[v]),
+                                        )
                                     }
+                                    // $['\n']
+                                    // impl $import_fromstr for $(&self.name) {
+                                    //     type Err = String;
+                                    //     $['\n']
+                                    //     fn from_str(s: &str) -> Result<Self, Self::Err> {
+                                    //         match s {
+                                    //             $(for v in range.clone() =>
+                                    //                 $(quoted(&values[v])) => Ok(Self::$(&variants[v])),
+                                    //             )
+                                    //             _ => Err(format!("Invalid variant: {}", s)),
+                                    //         }
+                                    //     }
+                                    // }
+                                    // $['\n']
+                                    // impl $import_display for $(&self.name) {
+                                    //     fn fmt(&self, f: &mut $import_formatter<'_>) -> std::fmt::Result {
+                                    //         let variant = match self {
+                                    //             $(for v in range =>
+                                    //                 Self::$(&variants[v]) => $(quoted(&values[v])),
+                                    //             )
+                                    //         };
+                                    //         write!(f, "{}", variant)
+                                    //     }
+                                    // }
                                 )
                             }
                             Enumeration::Integer(values) => {
                                 quote!(
+                                    #[derive(Debug, Clone, PartialEq, Eq, Hash, $import_serialize, $import_deserialize)]
                                     pub enum $(&self.name) {
                                         $(for value in values =>
                                             $(&self.name)$(*value) = $(*value),
@@ -209,10 +273,17 @@ impl Model {
                     }
                     None => {
                         quote!(
+                            #[derive(Debug, Clone, PartialEq, Eq, Hash, $import_serialize, $import_deserialize)]
                             pub struct $(&self.name) {
                                 $(for property in &self.properties =>
                                     $(property.description.as_ref().map(|description| quote!(#[doc=$(quoted(description))])))
-                                    pub $(&property.name): $(if property.required { $(&property.ty) } else { Option<$(&property.ty)> }),
+                                    $(if KEYWORDS.contains(&property.name.as_str()) {
+                                        #[serde(rename = $(quoted(&property.name)))]
+                                        pub $(&format!("r#{}", property.name))
+                                    } else {
+                                        pub $(&property.name)
+                                    }):
+                                    $(if property.required { $(&property.ty) } else { Option<$(&property.ty)> }),
                                 )
                             }
                         )

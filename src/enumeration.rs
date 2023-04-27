@@ -1,4 +1,3 @@
-use heck::ToUpperCamelCase;
 use openapiv3::{Schema, SchemaKind, Type};
 
 #[derive(Clone)]
@@ -18,7 +17,7 @@ impl Enumeration {
                     string
                         .enumeration
                         .iter()
-                        .filter_map(|s| s.as_ref().map(|s| s.to_upper_camel_case()))
+                        .filter_map(|s| s.as_ref().map(|s| s.clone()))
                         .collect(),
                 ))
             }
