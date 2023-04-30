@@ -1,5 +1,5 @@
-use crate::{err, generate::*, Error, Model};
-use openapiv3::OpenAPI;
+use crate::{err, generate::*, Error, Model, Operation};
+use openapiv3::{OpenAPI, ReferenceOr};
 use std::{fs::File, io::Read, path::Path, process::Command};
 
 pub struct Workload {
@@ -62,11 +62,15 @@ impl Workload {
     }
 
     pub fn generate(&self) -> Result<(), Error> {
-        for (name, schema) in self.schema.components.as_ref().unwrap().schemas.iter() {
-            let schema = schema.as_item().unwrap();
-            Model::discover(name, schema)?;
+        // for (name, schema) in self.schema.components.as_ref().unwrap().schemas.iter() {
+        //     let schema = schema.as_item().unwrap();
+        //     Model::discover(name, schema)?;
+        // }
+        // self.write_models()?;
+        for (path, schema) in self.schema.paths.iter() {
+            Operation::discover_all_from_path(path, schema)?;
+            break;
         }
-        self.write_models()?;
         self.format()?;
         Ok(())
     }
