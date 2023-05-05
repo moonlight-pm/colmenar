@@ -1,19 +1,19 @@
-use std::{collections::HashMap, sync::Mutex};
-
-use crate::{err, Error};
+use crate::{err, generate::write_tokens, Error, Resource};
+use genco::quote_in;
 use heck::ToSnakeCase;
 use hyper::Method;
-
 use once_cell::sync::OnceCell;
 use openapiv3::{PathItem, ReferenceOr};
+use std::{collections::HashMap, sync::Mutex};
 
 static OPERATIONS: OnceCell<Mutex<HashMap<String, Operation>>> = OnceCell::new();
 
 #[derive(Clone)]
 pub struct Operation {
-    name: String,
-    path: String,
-    method: Method,
+    pub name: String,
+    pub path: String,
+    pub method: Method,
+    pub description: String,
 }
 
 impl Operation {
@@ -27,7 +27,7 @@ impl Operation {
             .collect()
     }
 
-    fn add(operation: Operation) {
+    fn add(operation: Operation) -> Result<(), Error> {
         let mut operations = OPERATIONS
             .get_or_init(|| Mutex::new(HashMap::new()))
             .lock()
@@ -35,10 +35,12 @@ impl Operation {
         if operations.contains_key(&operation.name) {
             panic!("Operation {} already exists", operation.name);
         }
+        Resource::add_operation(&operation.path, &operation.name)?;
         operations.insert(operation.name.clone(), operation);
+        Ok(())
     }
 
-    fn get(name: &str) -> Option<Operation> {
+    pub fn get(name: &str) -> Option<Operation> {
         OPERATIONS
             .get_or_init(|| Mutex::new(HashMap::new()))
             .lock()
@@ -94,7 +96,8 @@ impl Operation {
             name,
             path: path.to_string(),
             method,
-        });
+            description: schema.description.unwrap_or_default(),
+        })?;
         Ok(())
     }
 }
