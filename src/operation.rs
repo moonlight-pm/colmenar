@@ -1,4 +1,4 @@
-use crate::{err, generate::*, Error, Model, Resource};
+use crate::prelude::*;
 use heck::{ToSnakeCase, ToUpperCamelCase};
 use hyper::Method;
 use once_cell::sync::OnceCell;

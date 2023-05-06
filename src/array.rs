@@ -1,4 +1,4 @@
-use crate::{err, generate::*, Error, Model};
+use crate::prelude::*;
 use openapiv3::{ReferenceOr, Schema, SchemaKind, Type};
 
 pub struct Array {}

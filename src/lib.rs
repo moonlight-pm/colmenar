@@ -3,9 +3,9 @@ mod array;
 mod constants;
 mod enumeration;
 mod error;
-mod generate;
 mod model;
 mod operation;
+mod prelude;
 mod property;
 mod resource;
 

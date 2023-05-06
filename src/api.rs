@@ -1,4 +1,4 @@
-use crate::{err, generate::*, Error, Model, Operation, Resource};
+use crate::prelude::*;
 use openapiv3::OpenAPI;
 use std::{fs::File, io::Read, path::Path};
 
