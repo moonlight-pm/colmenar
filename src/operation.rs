@@ -1,7 +1,6 @@
-use crate::{err, generate::write_tokens, Error, Model, Resource};
-use genco::quote_in;
+use crate::{err, generate::*, Error, Model, Resource};
 use heck::{ToSnakeCase, ToUpperCamelCase};
-use hyper::{Method, StatusCode};
+use hyper::Method;
 use once_cell::sync::OnceCell;
 use openapiv3::{PathItem, ReferenceOr, StatusCode::Code};
 use std::{collections::HashMap, sync::Mutex};
@@ -14,6 +13,7 @@ pub struct Operation {
     pub path: String,
     pub method: Method,
     pub description: String,
+    pub response: Tokens,
 }
 
 impl Operation {
@@ -91,13 +91,14 @@ impl Operation {
                 return err!("Operation is missing operationId: {}", path);
             }
         };
+        let mut response_name = String::from("()");
         for response in schema.responses.responses.iter() {
             match response {
                 (status, response) => {
                     if *status != Code(200) {
                         continue;
                     }
-                    let response_name = format!("{name}_response").to_upper_camel_case();
+                    response_name = format!("{name}_response").to_upper_camel_case();
                     let schema = match response {
                         ReferenceOr::Reference { reference, .. } => {
                             return err!("References not implemented: {}", reference);
@@ -139,6 +140,13 @@ impl Operation {
             path: path.to_string(),
             method,
             description: schema.description.unwrap_or_default(),
+            response: match response_name.as_str() {
+                "()" => quote!(()),
+                name => {
+                    let module = import("super::model", name);
+                    quote!($module)
+                }
+            },
         })?;
         Ok(())
     }

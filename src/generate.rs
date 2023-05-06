@@ -1,6 +1,6 @@
 use crate::Error;
 pub use genco::{
-    prelude::rust::{self, Tokens},
+    prelude::rust::{self, import, Tokens},
     quote,
     tokens::quoted,
 };

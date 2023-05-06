@@ -82,23 +82,26 @@ impl Workload {
 
     pub fn write_models(&self) -> Result<(), Error> {
         let models = Model::all();
-        write_tokens(
-            &format!("{}/models/mod.rs", self.output),
-            quote!(
-                $(for model in &models => pub mod $(&model.path);)
-                $['\n']
-                $(for model in &models => pub use $(&model.path)::$(&model.name);)
-            ),
-        )?;
+        // write_tokens(
+        //     &format!("{}/models/mod.rs", self.output),
+        //     quote!(
+        //         $(for model in &models => pub mod $(&model.path);)
+        //         $['\n']
+        //         $(for model in &models => pub use $(&model.path)::$(&model.name);)
+        //     ),
+        // )?;
         // write_tokens(
         //     &format!("{}/mod.rs", self.output),
         //     quote!(
         //         pub mod models;
         //     ),
         // )?;
+        let mut tokens = Tokens::new();
         for model in models {
-            model.write(&self.output)?;
+            // model.write(&self.output)?;
+            quote_in!(tokens => $(model.tokens()?));
         }
+        write_tokens(&format!("{}/model.rs", self.output), tokens)?;
         Ok(())
     }
 
@@ -110,6 +113,7 @@ impl Workload {
             use super::Error;
             use hyper::{Client, Uri, client::HttpConnector};
             use hyper_tls::HttpsConnector;
+            use serde_json::Value;
         }
         tokens.line();
         for resource in Resource::all() {
@@ -121,9 +125,9 @@ impl Workload {
                 let description = operation.description.clone();
                 quote_in! { resource_tokens =>
                     #[doc = $(quoted(description))]
-                    pub async fn $name(&self) -> Result<String, Error> {
+                    pub async fn $name(&self) -> Result<$(&operation.response), Error> {
                         $(match method {
-                            "GET" => self.get($(quoted(path))).await,
+                            "GET" => Ok(serde_json::from_value(self.get($(quoted(path))).await?)?),
                             _ => unimplemented!(),
                         })
                     }
@@ -153,7 +157,7 @@ impl Workload {
                     }
                 }
                 $['\n']
-                pub async fn request(&self, method: hyper::Method, path: &str) -> Result<String, Error> {
+                pub async fn request(&self, method: hyper::Method, path: &str) -> Result<Value, Error> {
                     let uri = format!("{}{path}", self.endpoint).parse::<Uri>().unwrap();
 
                     let request = hyper::Request::builder()
@@ -175,10 +179,10 @@ impl Workload {
 
                     println!("Response: {:?}", response);
                     let body = hyper::body::to_bytes(response.into_body()).await?;
-                    Ok(String::from_utf8_lossy(&body).to_string())
+                    Ok(serde_json::from_slice(&body)?)
                 }
                 $['\n']
-                pub async fn get(&self, path: &str) -> Result<String, Error> {
+                pub async fn get(&self, path: &str) -> Result<Value, Error> {
                     self.request(hyper::Method::GET, path).await
                 }
                 $['\n']

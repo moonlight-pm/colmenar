@@ -39,7 +39,7 @@ impl Property {
                 } => {
                     property.description = description.clone();
                     let ty = reference.split("/").last().unwrap().to_string();
-                    let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
+                    // let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
                     property.ty = quote!($ty);
                 }
                 ReferenceOr::Item(item) => {
@@ -52,7 +52,7 @@ impl Property {
                                 property.ty = quote!(String)
                             } else {
                                 Model::discover(&ty, item)?;
-                                let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
+                                // let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
                                 property.ty = quote!($ty)
                             }
                         }
@@ -62,7 +62,7 @@ impl Property {
                                 property.ty = quote!(i64)
                             } else {
                                 Model::discover(&ty, item)?;
-                                let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
+                                // let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
                                 property.ty = quote!($ty)
                             }
                         }
@@ -71,13 +71,13 @@ impl Property {
                                 property.ty = quote!(f64)
                             } else {
                                 Model::discover(&ty, item)?;
-                                let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
+                                // let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
                                 property.ty = quote!($ty)
                             }
                         }
                         SchemaKind::Type(Type::Object(_)) => {
                             Model::discover(&ty, item)?;
-                            let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
+                            // let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
                             property.ty = quote!($ty)
                         }
                         SchemaKind::Type(Type::Array(_)) => {
@@ -85,18 +85,18 @@ impl Property {
                         }
                         SchemaKind::Any(_) => {
                             Model::discover(&ty, item)?;
-                            let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
+                            // let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
                             property.ty = quote!($ty)
                         }
                         SchemaKind::AllOf { .. } => {
                             Model::discover(&ty, item)?;
-                            let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
+                            // let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
                             property.ty = quote!($ty);
                         }
                         SchemaKind::OneOf { .. } => {
                             let ty = format!("{}_{name}", model.name).to_upper_camel_case();
                             Model::discover(&ty, item)?;
-                            let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
+                            // let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
                             property.ty = quote!($ty);
                         }
                         _ => {

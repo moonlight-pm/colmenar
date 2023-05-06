@@ -167,13 +167,9 @@ impl Model {
         Ok(())
     }
 
-    pub fn write(&self, dir: &str) -> Result<(), Error> {
+    pub fn tokens(&self) -> Result<Tokens, Error> {
         let import_serialize = rust::import("serde", "Serialize");
         let import_deserialize = rust::import("serde", "Deserialize");
-        // let import_display = rust::import("std::fmt", "Display");
-        // let import_formatter = rust::import("std::fmt", "Formatter");
-        // let import_fromstr = rust::import("std::str", "FromStr");
-        let path = format!("{dir}/models/{}.rs", self.path);
         let mut tokens = Tokens::new();
         if let Some(description) = &self.description {
             tokens.append(quote!(
@@ -205,30 +201,6 @@ impl Model {
                                             $(&variants[v]),
                                         )
                                     }
-                                    // $['\n']
-                                    // impl $import_fromstr for $(&self.name) {
-                                    //     type Err = String;
-                                    //     $['\n']
-                                    //     fn from_str(s: &str) -> Result<Self, Self::Err> {
-                                    //         match s {
-                                    //             $(for v in range.clone() =>
-                                    //                 $(quoted(&values[v])) => Ok(Self::$(&variants[v])),
-                                    //             )
-                                    //             _ => Err(format!("Invalid variant: {}", s)),
-                                    //         }
-                                    //     }
-                                    // }
-                                    // $['\n']
-                                    // impl $import_display for $(&self.name) {
-                                    //     fn fmt(&self, f: &mut $import_formatter<'_>) -> std::fmt::Result {
-                                    //         let variant = match self {
-                                    //             $(for v in range =>
-                                    //                 Self::$(&variants[v]) => $(quoted(&values[v])),
-                                    //             )
-                                    //         };
-                                    //         write!(f, "{}", variant)
-                                    //     }
-                                    // }
                                 )
                             }
                             Enumeration::Integer(values) => {
@@ -242,12 +214,12 @@ impl Model {
                                 )
                             }
                             Enumeration::Object(types) => {
-                                let types = types.iter().map(|t| rust::import(format!("super::{}", t.to_snake_case()), t)).collect::<Vec<_>>();
+                                // let types = types.iter().map(|t| rust::import(format!("super::{}", t.to_snake_case()), t)).collect::<Vec<_>>();
                                 quote!(
                                     #[derive(Debug, Clone, PartialEq, $import_serialize, $import_deserialize)]
                                     pub enum $(&self.name) {
                                         $(for t in types =>
-                                            $(&t)($(&t)),
+                                            $t($t),
                                         )
                                     }
                                 )
@@ -275,7 +247,119 @@ impl Model {
                 }
             }
         });
-        write_tokens(&path, tokens)?;
-        Ok(())
+        tokens.line();
+        Ok(tokens)
     }
+
+    // pub fn write(&self, dir: &str) -> Result<(), Error> {
+    //     let import_serialize = rust::import("serde", "Serialize");
+    //     let import_deserialize = rust::import("serde", "Deserialize");
+    //     // let import_display = rust::import("std::fmt", "Display");
+    //     // let import_formatter = rust::import("std::fmt", "Formatter");
+    //     // let import_fromstr = rust::import("std::str", "FromStr");
+    //     let path = format!("{dir}/models/{}.rs", self.path);
+    //     let mut tokens = Tokens::new();
+    //     if let Some(description) = &self.description {
+    //         tokens.append(quote!(
+    //             #[doc=$(quoted(description))]
+    //         ));
+    //     }
+    //     tokens.append(match &self.ty {
+    //         Some(ty) => quote!(
+    //             pub type $(&self.name) = $ty;
+    //         ),
+    //         None =>  {
+    //             match &self.enumeration {
+    //                 Some(enumeration) => {
+    //                     match enumeration {
+    //                         Enumeration::String(values) => {
+    //                             let range = 0..values.len();
+    //                             let variants = values.into_iter().map(|s| {
+    //                                 if s.chars().next().unwrap().is_digit(10) {
+    //                                     format!("{}{}", &self.name, s).to_upper_camel_case()
+    //                                 } else {
+    //                                     s.to_upper_camel_case()
+    //                                 }
+    //                             }).collect::<Vec<_>>();
+    //                             quote!(
+    //                                 #[derive(Debug, Clone, PartialEq, $import_serialize, $import_deserialize)]
+    //                                 pub enum $(&self.name) {
+    //                                     $(for v in range =>
+    //                                         #[serde(rename = $(quoted(&values[v])))]
+    //                                         $(&variants[v]),
+    //                                     )
+    //                                 }
+    //                                 // $['\n']
+    //                                 // impl $import_fromstr for $(&self.name) {
+    //                                 //     type Err = String;
+    //                                 //     $['\n']
+    //                                 //     fn from_str(s: &str) -> Result<Self, Self::Err> {
+    //                                 //         match s {
+    //                                 //             $(for v in range.clone() =>
+    //                                 //                 $(quoted(&values[v])) => Ok(Self::$(&variants[v])),
+    //                                 //             )
+    //                                 //             _ => Err(format!("Invalid variant: {}", s)),
+    //                                 //         }
+    //                                 //     }
+    //                                 // }
+    //                                 // $['\n']
+    //                                 // impl $import_display for $(&self.name) {
+    //                                 //     fn fmt(&self, f: &mut $import_formatter<'_>) -> std::fmt::Result {
+    //                                 //         let variant = match self {
+    //                                 //             $(for v in range =>
+    //                                 //                 Self::$(&variants[v]) => $(quoted(&values[v])),
+    //                                 //             )
+    //                                 //         };
+    //                                 //         write!(f, "{}", variant)
+    //                                 //     }
+    //                                 // }
+    //                             )
+    //                         }
+    //                         Enumeration::Integer(values) => {
+    //                             quote!(
+    //                                 #[derive(Debug, Clone, PartialEq, $import_serialize, $import_deserialize)]
+    //                                 pub enum $(&self.name) {
+    //                                     $(for value in values =>
+    //                                         $(&self.name)$(*value) = $(*value),
+    //                                     )
+    //                                 }
+    //                             )
+    //                         }
+    //                         Enumeration::Object(types) => {
+    //                             let types = types.iter().map(|t| rust::import(format!("super::{}", t.to_snake_case()), t)).collect::<Vec<_>>();
+    //                             quote!(
+    //                                 #[derive(Debug, Clone, PartialEq, $import_serialize, $import_deserialize)]
+    //                                 pub enum $(&self.name) {
+    //                                     $(for t in types =>
+    //                                         $(&t)($(&t)),
+    //                                     )
+    //                                 }
+    //                             )
+    //                         }
+    //                     }
+    //                 }
+    //                 None => {
+    //                     quote!(
+    //                         #[derive(Debug, Clone, PartialEq, $import_serialize, $import_deserialize)]
+    //                         pub struct $(&self.name) {
+    //                             $(for property in &self.properties =>
+    //                                 $(property.description.as_ref().map(|description| quote!(#[doc=$(quoted(description))])))
+    //                                 $(if !property.required { #[serde(skip_serializing_if = "Option::is_none")] })
+    //                                 $(if KEYWORDS.contains(&property.name.to_snake_case().as_str()) {
+    //                                     #[serde(rename = $(quoted(&property.name)))]
+    //                                     pub $(&format!("r#{}", property.name))
+    //                                 } else {
+    //                                     pub $(&property.name.to_snake_case())
+    //                                 }):
+    //                                 $(if property.required && !property.nullable { $(&property.ty) } else { Option<$(&property.ty)> }),
+    //                             )
+    //                         }
+    //                     )
+    //                 }
+    //             }
+    //         }
+    //     });
+    //     write_tokens(&path, tokens)?;
+    //     Ok(())
+    // }
 }

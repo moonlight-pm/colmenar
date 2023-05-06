@@ -10,7 +10,7 @@ impl Array {
             SchemaKind::Type(Type::Array(array)) => match array.items.as_ref().unwrap() {
                 ReferenceOr::Reference { reference, .. } => {
                     let ty = reference.split("/").last().unwrap().to_string();
-                    let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
+                    // let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
                     quote!(Vec<$ty>)
                 }
                 ReferenceOr::Item(item) => match &item.schema_kind {
@@ -19,8 +19,8 @@ impl Array {
                             quote!(Vec<String>)
                         } else {
                             Model::discover(name, item)?;
-                            let ty = rust::import(format!("super::{}", name.to_snake_case()), name);
-                            quote!(Vec<$ty>)
+                            // let ty = rust::import(format!("super::{}", name.to_snake_case()), name);
+                            quote!(Vec<$name>)
                         }
                     }
                     SchemaKind::Type(Type::Integer(integer)) => {
@@ -28,14 +28,14 @@ impl Array {
                             quote!(Vec<i64>)
                         } else {
                             Model::discover(name, item)?;
-                            let ty = rust::import(format!("super::{}", name.to_snake_case()), name);
-                            quote!(Vec<$ty>)
+                            // let ty = rust::import(format!("super::{}", name.to_snake_case()), name);
+                            quote!(Vec<$name>)
                         }
                     }
                     SchemaKind::Type(Type::Object(_)) => {
                         Model::discover(name, item)?;
-                        let ty = rust::import(format!("super::{}", name.to_snake_case()), name);
-                        quote!(Vec<$ty>)
+                        // let ty = rust::import(format!("super::{}", name.to_snake_case()), name);
+                        quote!(Vec<$name>)
                     }
                     _ => return err!("Unhandled array type for {name}: {:?}", item.schema_kind,),
                 },
