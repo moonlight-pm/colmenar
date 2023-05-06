@@ -13,8 +13,11 @@ mod cycle;
 
 #[tokio::test]
 async fn test_resource_operation() {
-    let api = cycle::Api::new(std::env::var("CYCLE_KEY").unwrap());
-    let body = api.get_account().await.unwrap();
+    let api = cycle::Api::new(
+        std::env::var("CYCLE_KEY").unwrap(),
+        std::env::var("CYCLE_HUB").unwrap(),
+    );
+    let body = api.get_environments().await.unwrap();
     println!("Body: {:?}", body);
     // cycle::resources::account::get_account().await.unwrap();
     // CYCLE_KEY=secret_f8MyA06omqOVnL9pegpWsaQqPnyz3zHApdR4WgIIjQeKIkSl2QSMk8TUVPLh

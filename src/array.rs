@@ -37,7 +37,7 @@ impl Array {
                         let ty = rust::import(format!("super::{}", name.to_snake_case()), name);
                         quote!(Vec<$ty>)
                     }
-                    _ => return err!("Unhandled array type for: {:?}", item.schema_kind,),
+                    _ => return err!("Unhandled array type for {name}: {:?}", item.schema_kind,),
                 },
             },
             _ => return err!("Passed wrong type to Array::discover"),

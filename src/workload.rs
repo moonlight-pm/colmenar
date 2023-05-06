@@ -64,16 +64,17 @@ impl Workload {
     }
 
     pub fn generate(&self) -> Result<(), Error> {
-        self.write_config()?;
-        // for (name, schema) in self.schema.components.as_ref().unwrap().schemas.iter() {
-        //     let schema = schema.as_item().unwrap();
-        //     Model::discover(name, schema)?;
-        // }
-        // self.write_models()?;
-        for (path, schema) in self.schema.paths.iter() {
-            Operation::discover_all_from_path(path, schema)?;
-            break;
+        for (name, schema) in self.schema.components.as_ref().unwrap().schemas.iter() {
+            let schema = schema.as_item().unwrap();
+            Model::discover(name, schema)?;
         }
+        for (path, schema) in self.schema.paths.iter() {
+            if path == "/v1/environments" {
+                Operation::discover_all_from_path(path, schema)?;
+                break;
+            }
+        }
+        self.write_models()?;
         self.write_resources()?;
         self.format()?;
         Ok(())
@@ -107,7 +108,6 @@ impl Workload {
         let mut resource_tokens = Tokens::new();
         quote_in! { tokens =>
             use super::Error;
-            use super::config::ENDPOINT;
             use hyper::{Client, Uri, client::HttpConnector};
             use hyper_tls::HttpsConnector;
         }
@@ -133,28 +133,35 @@ impl Workload {
         }
         quote_in!(tokens =>
             pub struct Api {
+                version: String,
+                endpoint: String,
                 token: String,
+                hub: String,
                 client: Client<HttpsConnector<HttpConnector>>,
             }
             $['\n']
             impl Api {
-                pub fn new<S: AsRef<str>>(token: S) -> Self {
+                pub fn new<S: AsRef<str>>(token: S, hub: S) -> Self {
                     let https = HttpsConnector::new();
                     let client = Client::builder().build::<_, hyper::Body>(https);
                     Self {
+                        version: $(quoted(&self.schema.info.version)).to_string(),
+                        endpoint: $(quoted(&self.schema.servers[0].url)).to_string(),
                         token: token.as_ref().to_string(),
+                        hub: hub.as_ref().to_string(),
                         client,
                     }
                 }
                 $['\n']
                 pub async fn request(&self, method: hyper::Method, path: &str) -> Result<String, Error> {
-                    let uri = format!("{ENDPOINT}{path}").parse::<Uri>().unwrap();
+                    let uri = format!("{}{path}", self.endpoint).parse::<Uri>().unwrap();
 
                     let request = hyper::Request::builder()
                         .method(method)
                         .uri(uri)
                         .header("user-agent", "cycle/1.0.0")
                         .header("authorization", format!("Bearer {}", self.token))
+                        .header("x-hub-id", &self.hub)
                         .body(hyper::Body::empty())
                         .unwrap();
 
@@ -190,18 +197,6 @@ impl Workload {
         // for resource in resources {
         //     resource.write(&self.output)?;
         // }
-        Ok(())
-    }
-
-    pub fn write_config(&self) -> Result<(), Error> {
-        // println!("{:#?}", self.schema.servers);
-        write_tokens(
-            &format!("{}/config.rs", self.output),
-            quote!(
-                pub const VERSION: &str = $(quoted(&self.schema.info.version));
-                pub const ENDPOINT: &str = $(quoted(&self.schema.servers[0].url));
-            ),
-        )?;
         Ok(())
     }
 

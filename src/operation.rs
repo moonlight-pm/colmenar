@@ -1,9 +1,9 @@
-use crate::{err, generate::write_tokens, Error, Resource};
+use crate::{err, generate::write_tokens, Error, Model, Resource};
 use genco::quote_in;
-use heck::ToSnakeCase;
-use hyper::Method;
+use heck::{ToSnakeCase, ToUpperCamelCase};
+use hyper::{Method, StatusCode};
 use once_cell::sync::OnceCell;
-use openapiv3::{PathItem, ReferenceOr};
+use openapiv3::{PathItem, ReferenceOr, StatusCode::Code};
 use std::{collections::HashMap, sync::Mutex};
 
 static OPERATIONS: OnceCell<Mutex<HashMap<String, Operation>>> = OnceCell::new();
@@ -55,7 +55,6 @@ impl Operation {
                 return err!("References not implemented: {}", reference);
             }
             ReferenceOr::Item(item) => {
-                println!("{item:#?}");
                 if let Some(op) = &item.get {
                     Self::discover(path, Method::GET, op.clone())?;
                 }
@@ -92,6 +91,49 @@ impl Operation {
                 return err!("Operation is missing operationId: {}", path);
             }
         };
+        for response in schema.responses.responses.iter() {
+            match response {
+                (status, response) => {
+                    if *status != Code(200) {
+                        continue;
+                    }
+                    let response_name = format!("{name}_response").to_upper_camel_case();
+                    let schema = match response {
+                        ReferenceOr::Reference { reference, .. } => {
+                            return err!("References not implemented: {}", reference);
+                        }
+                        ReferenceOr::Item(item) => {
+                            if item.content.get("application/json").is_none() {
+                                return err!(
+                                    "Response is missing application/json content type: {path}"
+                                );
+                            }
+                            let schema = match item
+                                .content
+                                .get("application/json")
+                                .unwrap()
+                                .schema
+                                .as_ref()
+                                .unwrap()
+                            {
+                                ReferenceOr::Reference { reference, .. } => {
+                                    return err!("References not implemented: {}", reference);
+                                }
+                                ReferenceOr::Item(item) => item,
+                            };
+                            Model::discover(&response_name, schema)?;
+                        }
+                    };
+                    // let tokens = quote_in! { *; {
+                    //     #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+                    //     pub struct #name {
+                    //         #schema
+                    //     }
+                    // }};
+                    // write_tokens(&tokens, &format!("src/operation/{}.rs", name))?;
+                }
+            }
+        }
         Operation::add(Operation {
             name,
             path: path.to_string(),
@@ -101,3 +143,24 @@ impl Operation {
         Ok(())
     }
 }
+
+// responses:
+//         '200':
+//           description: Returns a collection of environment resources.
+//           content:
+//             application/json:
+//               schema:
+//                 title: EnvironmentListResponse
+//                 type: object
+//                 required:
+//                   - data
+//                 properties:
+//                   data:
+//                     type: array
+//                     items:
+//                       $ref: '#/components/schemas/Environment'
+//                   includes:
+//                     type: object
+//                     properties:
+//                       creators:
+//                         $ref: '#/components/schemas/CreatorInclude'
