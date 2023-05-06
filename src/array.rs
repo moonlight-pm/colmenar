@@ -1,5 +1,4 @@
 use crate::{err, generate::*, Error, Model};
-use heck::ToSnakeCase;
 use openapiv3::{ReferenceOr, Schema, SchemaKind, Type};
 
 pub struct Array {}

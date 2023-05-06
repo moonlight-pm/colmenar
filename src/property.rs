@@ -1,5 +1,5 @@
 use crate::{err, generate::*, Array, Error, Model};
-use heck::{ToSnakeCase, ToUpperCamelCase};
+use heck::ToUpperCamelCase;
 use indexmap::IndexMap;
 use openapiv3::{ReferenceOr, Schema, SchemaKind, Type};
 

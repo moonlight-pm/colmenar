@@ -99,7 +99,7 @@ impl Operation {
                         continue;
                     }
                     response_name = format!("{name}_response").to_upper_camel_case();
-                    let schema = match response {
+                    match response {
                         ReferenceOr::Reference { reference, .. } => {
                             return err!("References not implemented: {}", reference);
                         }
@@ -125,13 +125,6 @@ impl Operation {
                             Model::discover(&response_name, schema)?;
                         }
                     };
-                    // let tokens = quote_in! { *; {
-                    //     #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-                    //     pub struct #name {
-                    //         #schema
-                    //     }
-                    // }};
-                    // write_tokens(&tokens, &format!("src/operation/{}.rs", name))?;
                 }
             }
         }

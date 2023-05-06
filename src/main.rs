@@ -1,4 +1,4 @@
-use colmenar::{Error, Workload};
+use colmenar::{Api, Error};
 
 fn main() {
     match run() {
@@ -15,6 +15,6 @@ fn run() -> Result<(), Error> {
         println!("Usage: {} <schema-file> <output-directory>", args[0]);
         std::process::exit(1);
     }
-    Workload::new(&args[1], &args[2])?.generate()?;
+    Api::new(&args[1], &args[2])?.generate()?;
     Ok(())
 }
