@@ -160,13 +160,9 @@ impl Api {
                                 return Err(Error::from(e));
                             }
                         };
-                        // println!("Response: {:?}", response);
+                        println!("Response: {:?}", response);
                         let body = hyper::body::to_bytes(response.into_body()).await?;
-                        // println!("Body: {:?}", String::from_utf8_lossy(&body));
-                        // Ok(match serde_json::from_slice(&body) {
-                        //     Ok(v) => Some(v),
-                        //     Err(e) => None,
-                        // })
+                        println!("Body: {:?}", String::from_utf8_lossy(&body));
                         Ok(match serde_json::from_slice(&body) {
                             Ok(v) => Some(serde_json::from_value(v)?),
                             Err(e) => None,

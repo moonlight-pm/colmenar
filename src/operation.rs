@@ -259,7 +259,7 @@ impl Operation {
                         self.request::<_, _, $(if self.response.is_some() { _ } else { Value })>(Method::PUT, path, Some(body)).await?;
                     }
                     Method::POST => {
-                        self.request::<_, _, $(if self.response.is_some() { _ } else { Value })>(Method::PUT, path, Some(body)).await?;
+                        self.request::<_, _, $(if self.response.is_some() { _ } else { Value })>(Method::POST, path, Some(body)).await?;
                     }
                     Method::DELETE => {
                         self.request::<_, Value, $(if self.response.is_some() { _ } else { Value })>(Method::DELETE, path, None).await?;
