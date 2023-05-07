@@ -202,6 +202,7 @@ impl Operation {
     }
 
     pub fn tokens(&self) -> Result<Tokens, Error> {
+        // let response_type = self.response.clone().unwrap_or(quote!(Value));
         Ok(quote!(
             #[doc = $(quoted(&self.description))]
             pub async fn $(self.name.to_snake_case())(&self
@@ -252,26 +253,26 @@ impl Operation {
                 })
                 $(match self.method {
                     Method::GET => {
-                        self.request(Method::GET, path, None).await?;
+                        self.request::<_, Value, $(if self.response.is_some() { _ } else { Value })>(Method::GET, path, None).await?;
                     },
                     Method::PUT => {
-                        self.request(Method::PUT, path, Some(serde_json::to_value(body).unwrap())).await?;
+                        self.request::<_, _, $(if self.response.is_some() { _ } else { Value })>(Method::PUT, path, Some(body)).await?;
                     }
                     Method::POST => {
-                        self.request(Method::PUT, path, Some(serde_json::to_value(body).unwrap())).await?;
+                        self.request::<_, _, $(if self.response.is_some() { _ } else { Value })>(Method::PUT, path, Some(body)).await?;
                     }
                     Method::DELETE => {
-                        self.request(Method::DELETE, path, None).await?;
+                        self.request::<_, Value, $(if self.response.is_some() { _ } else { Value })>(Method::DELETE, path, None).await?;
                     }
                     Method::PATCH => {
-                        self.request(Method::PATCH, path, Some(serde_json::to_value(body).unwrap())).await?;
+                        self.request::<_, _, $(if self.response.is_some() { _ } else { Value })>(Method::PATCH, path, Some(body)).await?;
                     }
                     _ => {
                         None;
                     },
                 })
                 $(if self.response.is_some() {
-                    Ok(serde_json::from_value(response.unwrap())?)
+                    Ok(response.unwrap())
                 } else {
                     Ok(())
                 })

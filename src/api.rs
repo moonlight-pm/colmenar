@@ -97,7 +97,7 @@ impl Api {
                 use hyper::{Client, Uri, client::HttpConnector, Method};
                 use hyper_tls::HttpsConnector;
                 use serde_json::Value;
-                use serde::Serialize;
+                use serde::{de::DeserializeOwned, Serialize};
                 $['\n']
                 pub fn resolve<S: Serialize>(object: &mut Value, name: &str, value: Option<S>) {
                     if let Some(value) = value {
@@ -137,8 +137,9 @@ impl Api {
                         }
                     }
                     $['\n']
-                    pub async fn request<S: AsRef<str>>(&self, method: Method, path: S, body: Option<Value>) -> Result<Option<Value>, Error> {
+                    pub async fn request<S: AsRef<str>, SS: Serialize, DD: DeserializeOwned>(&self, method: Method, path: S, body: Option<SS>) -> Result<Option<DD>, Error> {
                         let path = path.as_ref();
+                        let body = body.map(|v| serde_json::to_value(v).unwrap());
                         let uri = format!("{}{path}", self.endpoint).parse::<Uri>().unwrap();
                         println!("Request: {} {}", method, uri);
                         let request = hyper::Request::builder()
@@ -162,8 +163,12 @@ impl Api {
                         // println!("Response: {:?}", response);
                         let body = hyper::body::to_bytes(response.into_body()).await?;
                         // println!("Body: {:?}", String::from_utf8_lossy(&body));
+                        // Ok(match serde_json::from_slice(&body) {
+                        //     Ok(v) => Some(v),
+                        //     Err(e) => None,
+                        // })
                         Ok(match serde_json::from_slice(&body) {
-                            Ok(v) => Some(v),
+                            Ok(v) => Some(serde_json::from_value(v)?),
                             Err(e) => None,
                         })
                     }
