@@ -13429,8 +13429,8 @@ components:
       title: EnvironmentServices
       type: object
       description: Service containers run by this environment and their configurations.
-      required:
-        - loadbalancer
+      # required:
+      #   - loadbalancer
       properties:
         loadbalancer:
           $ref: '#/components/schemas/LoadBalancerEnvironmentService'
@@ -13477,7 +13477,7 @@ components:
         - vxlan_tag
         - subnet
         - ipv6
-        - legacy
+        # - legacy
       properties:
         vxlan_tag:
           type: integer
@@ -13593,6 +13593,7 @@ components:
             - description: The IPv6 interface.
             - $ref: '#/components/schemas/IPNet'
         legacy:
+          nullable: true
           $ref: '#/components/schemas/LegacyNetwork'
     ContainerSummary:
       title: ContainerSummary

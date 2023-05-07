@@ -51,14 +51,17 @@ impl Api {
     }
 
     pub fn generate(&self) -> Result<(), Error> {
+        for (name, schema) in self.schema.components.as_ref().unwrap().parameters.iter() {
+            let data = schema.as_item().unwrap().clone().parameter_data();
+            Parameter::discover(name, data)?;
+        }
         for (name, schema) in self.schema.components.as_ref().unwrap().schemas.iter() {
             let schema = schema.as_item().unwrap();
             Model::discover(name, schema)?;
         }
         for (path, schema) in self.schema.paths.iter() {
-            if path == "/v1/environments" {
+            if path.starts_with("/v1/environments") {
                 Operation::discover_all_from_path(path, schema)?;
-                break;
             }
         }
         self.write()?;
@@ -66,6 +69,18 @@ impl Api {
     }
 
     pub fn write(&self) -> Result<(), Error> {
+        write_tokens(
+            &format!("{}/mod.rs", self.output),
+            quote!(
+                pub mod api;
+                pub mod model;
+                $['\n']
+                pub use api::Api;
+                pub use model::*;
+                $['\n']
+                pub type Error = Box<dyn std::error::Error + Send + Sync>;
+            ),
+        )?;
         write_tokens(
             &format!("{}/model.rs", self.output),
             quote!(
@@ -79,9 +94,27 @@ impl Api {
             &format!("{}/api.rs", self.output),
             quote!(
                 use super::Error;
-                use hyper::{Client, Uri, client::HttpConnector};
+                use hyper::{Client, Uri, client::HttpConnector, Method};
                 use hyper_tls::HttpsConnector;
                 use serde_json::Value;
+                use serde::Serialize;
+                $['\n']
+                pub fn resolve<S: Serialize>(object: &mut Value, name: &str, value: Option<S>) {
+                    if let Some(value) = value {
+                        let value = serde_json::to_value(value).unwrap();
+                        object[name] = if let serde_json::Value::Array(value) = value {
+                            serde_json::Value::String(
+                                value
+                                    .iter()
+                                    .map(|v| v.as_str().unwrap())
+                                    .collect::<Vec<_>>()
+                                    .join(","),
+                            )
+                        } else {
+                            value
+                        };
+                    }
+                }
                 $['\n']
                 pub struct Api {
                     version: String,
@@ -104,18 +137,21 @@ impl Api {
                         }
                     }
                     $['\n']
-                    pub async fn request(&self, method: hyper::Method, path: &str) -> Result<Value, Error> {
+                    pub async fn request<S: AsRef<str>>(&self, method: Method, path: S, body: Option<Value>) -> Result<Option<Value>, Error> {
+                        let path = path.as_ref();
                         let uri = format!("{}{path}", self.endpoint).parse::<Uri>().unwrap();
-
+                        println!("Request: {} {}", method, uri);
                         let request = hyper::Request::builder()
                             .method(method)
                             .uri(uri)
                             .header("user-agent", "cycle/1.0.0")
                             .header("authorization", format!("Bearer {}", self.token))
                             .header("x-hub-id", &self.hub)
-                            .body(hyper::Body::empty())
+                            .body(match body {
+                                Some(body) => hyper::Body::from(serde_json::to_string(&body)?),
+                                None => hyper::Body::empty(),
+                            })
                             .unwrap();
-
                         let response = match self.client.request(request).await {
                             Ok(resp) => resp,
                             Err(e) => {
@@ -123,18 +159,18 @@ impl Api {
                                 return Err(Error::from(e));
                             }
                         };
-
-                        println!("Response: {:?}", response);
+                        // println!("Response: {:?}", response);
                         let body = hyper::body::to_bytes(response.into_body()).await?;
-                        Ok(serde_json::from_slice(&body)?)
+                        // println!("Body: {:?}", String::from_utf8_lossy(&body));
+                        Ok(match serde_json::from_slice(&body) {
+                            Ok(v) => Some(v),
+                            Err(e) => None,
+                        })
                     }
                     $['\n']
-                    pub async fn get(&self, path: &str) -> Result<Value, Error> {
-                        self.request(hyper::Method::GET, path).await
-                    }
-                    $['\n']
-                    $(for resource in Resource::all() =>
-                        $(resource.tokens()?)
+                    $(for operation in Operation::all() =>
+                        $(operation.tokens()?)
+                        $['\n']
                     )
                 }
             ),

@@ -1,7 +1,6 @@
 test:
 	# rm -rf tests/cycle
 	mkdir -p tests/cycle
-	cp -r src/scaffold/* tests/cycle
 	cargo run tests/fixtures/cycle.yaml tests/cycle
 	cargo test -- --nocapture
 

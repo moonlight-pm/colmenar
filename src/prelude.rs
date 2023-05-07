@@ -1,5 +1,5 @@
 pub use crate::constants::{GREEK, KEYWORDS};
-pub use crate::{err, Array, Enumeration, Error, Model, Operation, Property, Resource};
+pub use crate::{err, Array, Enumeration, Error, Model, Operation, Parameter, Property};
 pub use genco::{
     prelude::rust::{self, import, Tokens},
     quote, quote_in,

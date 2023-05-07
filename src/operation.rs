@@ -3,9 +3,9 @@ use heck::{ToSnakeCase, ToUpperCamelCase};
 use hyper::Method;
 use once_cell::sync::OnceCell;
 use openapiv3::{PathItem, ReferenceOr, StatusCode::Code};
-use std::{collections::HashMap, sync::Mutex};
+use std::{collections::BTreeMap, sync::Mutex};
 
-static OPERATIONS: OnceCell<Mutex<HashMap<String, Operation>>> = OnceCell::new();
+static OPERATIONS: OnceCell<Mutex<BTreeMap<String, Operation>>> = OnceCell::new();
 
 #[derive(Clone)]
 pub struct Operation {
@@ -13,13 +13,16 @@ pub struct Operation {
     pub path: String,
     pub method: Method,
     pub description: String,
-    pub response: Tokens,
+    pub parameters: Vec<Parameter>,
+    pub query: Vec<Parameter>,
+    pub request: Option<Tokens>,
+    pub response: Option<Tokens>,
 }
 
 impl Operation {
     pub fn all() -> Vec<Operation> {
         OPERATIONS
-            .get_or_init(|| Mutex::new(HashMap::new()))
+            .get_or_init(|| Mutex::new(BTreeMap::new()))
             .lock()
             .unwrap()
             .values()
@@ -29,20 +32,19 @@ impl Operation {
 
     fn add(operation: Operation) -> Result<(), Error> {
         let mut operations = OPERATIONS
-            .get_or_init(|| Mutex::new(HashMap::new()))
+            .get_or_init(|| Mutex::new(BTreeMap::new()))
             .lock()
             .unwrap();
         if operations.contains_key(&operation.name) {
             panic!("Operation {} already exists", operation.name);
         }
-        Resource::add_operation(&operation.path, &operation.name)?;
         operations.insert(operation.name.clone(), operation);
         Ok(())
     }
 
     pub fn get(name: &str) -> Option<Operation> {
         OPERATIONS
-            .get_or_init(|| Mutex::new(HashMap::new()))
+            .get_or_init(|| Mutex::new(BTreeMap::new()))
             .lock()
             .unwrap()
             .get(name)
@@ -91,15 +93,70 @@ impl Operation {
                 return err!("Operation is missing operationId: {}", path);
             }
         };
-        let mut response_name = String::from("()");
-        for response in schema.responses.responses.iter() {
-            match response {
-                (status, response) => {
+        let mut parameters = Vec::new();
+        let mut query = Vec::new();
+        for item in schema.parameters {
+            match item {
+                ReferenceOr::Reference { reference, .. } => {
+                    let reference = reference.split('/').last().unwrap();
+                    let parameter = Parameter::get(&reference).unwrap();
+                    query.push(parameter);
+                }
+                ReferenceOr::Item(item) => match item {
+                    openapiv3::Parameter::Path { parameter_data, .. } => {
+                        let type_name =
+                            format!("{name}_{}", parameter_data.name).to_upper_camel_case();
+                        parameters.push(Parameter::discover(&type_name, parameter_data)?);
+                    }
+                    openapiv3::Parameter::Query { parameter_data, .. } => {
+                        let type_name =
+                            format!("{name}_{}", parameter_data.name).to_upper_camel_case();
+                        query.push(Parameter::discover(&type_name, parameter_data)?);
+                    }
+                    _ => {
+                        return err!("Unsupported parameter type: {item:?}");
+                    }
+                },
+            }
+        }
+        let mut request = None;
+        if let Some(item) = schema.request_body.as_ref() {
+            match item {
+                ReferenceOr::Reference { .. } => {
+                    unimplemented!();
+                }
+                ReferenceOr::Item(item) => {
+                    if item.content.get("application/json").is_none() {
+                        return err!("Request is missing application/json content type: {path}");
+                    }
+                    let schema = match item
+                        .content
+                        .get("application/json")
+                        .unwrap()
+                        .schema
+                        .as_ref()
+                        .unwrap()
+                    {
+                        ReferenceOr::Reference { reference, .. } => {
+                            return err!("References not implemented: {}", reference);
+                        }
+                        ReferenceOr::Item(item) => item,
+                    };
+                    let name = format!("{name}_request").to_upper_camel_case();
+                    let module = import("super", &name);
+                    Model::discover(&name, schema)?;
+                    request = Some(quote!($module));
+                }
+            }
+        }
+        let mut response = None;
+        for item in schema.responses.responses.iter() {
+            match item {
+                (status, item) => {
                     if *status != Code(200) {
                         continue;
                     }
-                    response_name = format!("{name}_response").to_upper_camel_case();
-                    match response {
+                    match item {
                         ReferenceOr::Reference { reference, .. } => {
                             return err!("References not implemented: {}", reference);
                         }
@@ -122,7 +179,10 @@ impl Operation {
                                 }
                                 ReferenceOr::Item(item) => item,
                             };
-                            Model::discover(&response_name, schema)?;
+                            let name = format!("{name}_response").to_upper_camel_case();
+                            let module = import("super", &name);
+                            Model::discover(&name, schema)?;
+                            response = Some(quote!($module));
                         }
                     };
                 }
@@ -133,35 +193,89 @@ impl Operation {
             path: path.to_string(),
             method,
             description: schema.description.unwrap_or_default(),
-            response: match response_name.as_str() {
-                "()" => quote!(()),
-                name => {
-                    let module = import("super::model", name);
-                    quote!($module)
-                }
-            },
+            parameters,
+            query,
+            request,
+            response,
         })?;
         Ok(())
     }
-}
 
-// responses:
-//         '200':
-//           description: Returns a collection of environment resources.
-//           content:
-//             application/json:
-//               schema:
-//                 title: EnvironmentListResponse
-//                 type: object
-//                 required:
-//                   - data
-//                 properties:
-//                   data:
-//                     type: array
-//                     items:
-//                       $ref: '#/components/schemas/Environment'
-//                   includes:
-//                     type: object
-//                     properties:
-//                       creators:
-//                         $ref: '#/components/schemas/CreatorInclude'
+    pub fn tokens(&self) -> Result<Tokens, Error> {
+        Ok(quote!(
+            #[doc = $(quoted(&self.description))]
+            pub async fn $(self.name.to_snake_case())(&self
+                $(for parameter in &self.parameters {
+                    , $(&parameter.name):
+                    $(if parameter.required {
+                        $(&parameter.ty)
+                    } else {
+                        Option<$(&parameter.ty)>
+                    })
+                })
+                $(for parameter in &self.query {
+                    , $(&parameter.name):
+                    $(if parameter.required {
+                        $(&parameter.ty)
+                    } else {
+                        Option<$(&parameter.ty)>
+                    })
+                })
+                $(if self.request.is_some() {
+                    , body: $(self.request.as_ref().unwrap())
+                })
+            ) -> Result<$(self.response.as_ref().unwrap_or(&quote!(()))), Error> {
+                let
+                $(if !self.parameters.is_empty() || !self.query.is_empty() {
+                   mut
+                })
+                path = String::from($(quoted(&self.path)));
+                $(for parameter in &self.parameters {
+                    path = path.replace($(quoted(quote!({$(&parameter.original_name)}))), &$(&parameter.name));
+                })
+                $(if !self.query.is_empty() {
+                    let mut query = Value::Object(serde_json::Map::new());
+                    $(for parameter in &self.query {
+                        $(if parameter.required {
+                            resolve(&mut query, $(quoted(&parameter.original_name)), Some($(&parameter.name)));
+                        } else {
+                            resolve(&mut query, $(quoted(&parameter.original_name)), $(&parameter.name));
+                        })
+                    })
+                    let query = serde_urlencoded::to_string(&query)?;
+                    if !query.is_empty() {
+                        path = format!("{path}?{query}");
+                    }
+                })
+                $(if self.response.is_some() {
+                    let response =
+                })
+                $(match self.method {
+                    Method::GET => {
+                        self.request(Method::GET, path, None).await?;
+                    },
+                    Method::PUT => {
+                        self.request(Method::PUT, path, Some(serde_json::to_value(body).unwrap())).await?;
+                    }
+                    Method::POST => {
+                        self.request(Method::PUT, path, Some(serde_json::to_value(body).unwrap())).await?;
+                    }
+                    Method::DELETE => {
+                        self.request(Method::DELETE, path, None).await?;
+                    }
+                    Method::PATCH => {
+                        self.request(Method::PATCH, path, Some(serde_json::to_value(body).unwrap())).await?;
+                    }
+                    _ => {
+                        None;
+                    },
+                })
+                $(if self.response.is_some() {
+                    Ok(serde_json::from_value(response.unwrap())?)
+                } else {
+                    Ok(())
+                })
+            }
+        ))
+    }
+}

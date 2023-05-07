@@ -1,9 +1,9 @@
 use crate::prelude::*;
 use once_cell::sync::OnceCell;
 use openapiv3::{ReferenceOr, Schema, SchemaKind, Type};
-use std::{collections::HashMap, sync::Mutex};
+use std::{collections::BTreeMap, sync::Mutex};
 
-static MODELS: OnceCell<Mutex<HashMap<String, Model>>> = OnceCell::new();
+static MODELS: OnceCell<Mutex<BTreeMap<String, Model>>> = OnceCell::new();
 
 #[derive(Clone)]
 pub struct Model {
@@ -18,7 +18,7 @@ pub struct Model {
 impl Model {
     pub fn all() -> Vec<Model> {
         MODELS
-            .get_or_init(|| Mutex::new(HashMap::new()))
+            .get_or_init(|| Mutex::new(BTreeMap::new()))
             .lock()
             .unwrap()
             .values()
@@ -28,7 +28,7 @@ impl Model {
 
     fn add(model: Model) {
         let mut models = MODELS
-            .get_or_init(|| Mutex::new(HashMap::new()))
+            .get_or_init(|| Mutex::new(BTreeMap::new()))
             .lock()
             .unwrap();
         if models.contains_key(&model.name) {
@@ -39,7 +39,7 @@ impl Model {
 
     fn get(name: &str) -> Option<Model> {
         MODELS
-            .get_or_init(|| Mutex::new(HashMap::new()))
+            .get_or_init(|| Mutex::new(BTreeMap::new()))
             .lock()
             .unwrap()
             .get(name)
@@ -195,6 +195,10 @@ impl Model {
                                             $(&variants[v]),
                                         )
                                     }
+                                    $['\n']
+                                    impl Default for $(&self.name) {
+                                        fn default() -> Self { Self::$(&variants[0]) }
+                                    }
                                 )
                             }
                             Enumeration::Integer(values) => {
@@ -208,7 +212,6 @@ impl Model {
                                 )
                             }
                             Enumeration::Object(types) => {
-                                // let types = types.iter().map(|t| rust::import(format!("super::{}", t.to_snake_case()), t)).collect::<Vec<_>>();
                                 quote!(
                                     #[derive(Debug, Clone, PartialEq, $import_serialize, $import_deserialize)]
                                     pub enum $(&self.name) {
@@ -221,20 +224,65 @@ impl Model {
                         }
                     }
                     None => {
+                        let strtok = quote!(String);
+                        let has_string = self.properties.iter().any(|p| {
+                            p.ty == strtok
+                        });
                         quote!(
-                            #[derive(Debug, Clone, PartialEq, $import_serialize, $import_deserialize)]
+                            #[derive(Debug, Clone, PartialEq, Default, $import_serialize, $import_deserialize)]
                             pub struct $(&self.name) {
                                 $(for property in &self.properties =>
                                     $(property.description.as_ref().map(|description| quote!(#[doc=$(quoted(description))])))
                                     $(if !property.required { #[serde(skip_serializing_if = "Option::is_none")] })
-                                    $(if KEYWORDS.contains(&property.name.to_snake_case().as_str()) {
+                                    $(if property.name != property.safe_name {
                                         #[serde(rename = $(quoted(&property.name)))]
-                                        pub $(&format!("r#{}", property.name))
-                                    } else {
-                                        pub $(&property.name.to_snake_case())
-                                    }):
+                                    })
+                                    pub $(&property.safe_name):
                                     $(if property.required && !property.nullable { $(&property.ty) } else { Option<$(&property.ty)> }),
                                 )
+                            }
+                            $['\n']
+                            impl $(&self.name) {
+                                pub fn new
+                                $(if has_string {<S: AsRef<str>>})
+                                (
+                                    $(for property in &self.properties =>
+                                        $(if property.required {
+                                            $(&property.safe_name):
+                                            $(if property.nullable {
+                                                $(if property.ty == strtok {
+                                                    Option<S>
+                                                } else {
+                                                    Option<$(&property.ty)>
+                                                })
+                                            } else {
+                                                $(if property.ty == strtok {
+                                                    S
+                                                } else {
+                                                    $(&property.ty)
+                                                })
+                                            }),
+                                        })
+                                    )
+                                ) -> Self {
+                                    $(for property in &self.properties =>
+                                        $(if property.required && property.ty == strtok {
+                                            $(if property.nullable {
+                                                let $(&property.safe_name) = $(&property.safe_name).map(|s| s.as_ref().to_string());
+                                            } else {
+                                                let $(&property.safe_name) = $(&property.safe_name).as_ref().to_string();
+                                            })
+                                        })
+                                    )
+                                    Self {
+                                        $(for property in &self.properties =>
+                                            $(if property.required {
+                                                $(&property.safe_name),
+                                            })
+                                        )
+                                        ..Default::default()
+                                    }
+                                }
                             }
                         )
                     }
@@ -244,116 +292,4 @@ impl Model {
         tokens.line();
         Ok(tokens)
     }
-
-    // pub fn write(&self, dir: &str) -> Result<(), Error> {
-    //     let import_serialize = rust::import("serde", "Serialize");
-    //     let import_deserialize = rust::import("serde", "Deserialize");
-    //     // let import_display = rust::import("std::fmt", "Display");
-    //     // let import_formatter = rust::import("std::fmt", "Formatter");
-    //     // let import_fromstr = rust::import("std::str", "FromStr");
-    //     let path = format!("{dir}/models/{}.rs", self.path);
-    //     let mut tokens = Tokens::new();
-    //     if let Some(description) = &self.description {
-    //         tokens.append(quote!(
-    //             #[doc=$(quoted(description))]
-    //         ));
-    //     }
-    //     tokens.append(match &self.ty {
-    //         Some(ty) => quote!(
-    //             pub type $(&self.name) = $ty;
-    //         ),
-    //         None =>  {
-    //             match &self.enumeration {
-    //                 Some(enumeration) => {
-    //                     match enumeration {
-    //                         Enumeration::String(values) => {
-    //                             let range = 0..values.len();
-    //                             let variants = values.into_iter().map(|s| {
-    //                                 if s.chars().next().unwrap().is_digit(10) {
-    //                                     format!("{}{}", &self.name, s).to_upper_camel_case()
-    //                                 } else {
-    //                                     s.to_upper_camel_case()
-    //                                 }
-    //                             }).collect::<Vec<_>>();
-    //                             quote!(
-    //                                 #[derive(Debug, Clone, PartialEq, $import_serialize, $import_deserialize)]
-    //                                 pub enum $(&self.name) {
-    //                                     $(for v in range =>
-    //                                         #[serde(rename = $(quoted(&values[v])))]
-    //                                         $(&variants[v]),
-    //                                     )
-    //                                 }
-    //                                 // $['\n']
-    //                                 // impl $import_fromstr for $(&self.name) {
-    //                                 //     type Err = String;
-    //                                 //     $['\n']
-    //                                 //     fn from_str(s: &str) -> Result<Self, Self::Err> {
-    //                                 //         match s {
-    //                                 //             $(for v in range.clone() =>
-    //                                 //                 $(quoted(&values[v])) => Ok(Self::$(&variants[v])),
-    //                                 //             )
-    //                                 //             _ => Err(format!("Invalid variant: {}", s)),
-    //                                 //         }
-    //                                 //     }
-    //                                 // }
-    //                                 // $['\n']
-    //                                 // impl $import_display for $(&self.name) {
-    //                                 //     fn fmt(&self, f: &mut $import_formatter<'_>) -> std::fmt::Result {
-    //                                 //         let variant = match self {
-    //                                 //             $(for v in range =>
-    //                                 //                 Self::$(&variants[v]) => $(quoted(&values[v])),
-    //                                 //             )
-    //                                 //         };
-    //                                 //         write!(f, "{}", variant)
-    //                                 //     }
-    //                                 // }
-    //                             )
-    //                         }
-    //                         Enumeration::Integer(values) => {
-    //                             quote!(
-    //                                 #[derive(Debug, Clone, PartialEq, $import_serialize, $import_deserialize)]
-    //                                 pub enum $(&self.name) {
-    //                                     $(for value in values =>
-    //                                         $(&self.name)$(*value) = $(*value),
-    //                                     )
-    //                                 }
-    //                             )
-    //                         }
-    //                         Enumeration::Object(types) => {
-    //                             let types = types.iter().map(|t| rust::import(format!("super::{}", t.to_snake_case()), t)).collect::<Vec<_>>();
-    //                             quote!(
-    //                                 #[derive(Debug, Clone, PartialEq, $import_serialize, $import_deserialize)]
-    //                                 pub enum $(&self.name) {
-    //                                     $(for t in types =>
-    //                                         $(&t)($(&t)),
-    //                                     )
-    //                                 }
-    //                             )
-    //                         }
-    //                     }
-    //                 }
-    //                 None => {
-    //                     quote!(
-    //                         #[derive(Debug, Clone, PartialEq, $import_serialize, $import_deserialize)]
-    //                         pub struct $(&self.name) {
-    //                             $(for property in &self.properties =>
-    //                                 $(property.description.as_ref().map(|description| quote!(#[doc=$(quoted(description))])))
-    //                                 $(if !property.required { #[serde(skip_serializing_if = "Option::is_none")] })
-    //                                 $(if KEYWORDS.contains(&property.name.to_snake_case().as_str()) {
-    //                                     #[serde(rename = $(quoted(&property.name)))]
-    //                                     pub $(&format!("r#{}", property.name))
-    //                                 } else {
-    //                                     pub $(&property.name.to_snake_case())
-    //                                 }):
-    //                                 $(if property.required && !property.nullable { $(&property.ty) } else { Option<$(&property.ty)> }),
-    //                             )
-    //                         }
-    //                     )
-    //                 }
-    //             }
-    //         }
-    //     });
-    //     write_tokens(&path, tokens)?;
-    //     Ok(())
-    // }
 }

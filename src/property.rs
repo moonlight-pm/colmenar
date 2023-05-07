@@ -5,6 +5,7 @@ use openapiv3::{ReferenceOr, Schema, SchemaKind, Type};
 #[derive(Clone)]
 pub struct Property {
     pub name: String,
+    pub safe_name: String,
     pub ty: Tokens,
     pub description: Option<String>,
     pub required: bool,
@@ -13,8 +14,15 @@ pub struct Property {
 
 impl Property {
     pub fn new(name: &str) -> Self {
+        let name = name.to_snake_case();
+        let safe_name = if KEYWORDS.contains(&name.as_str()) {
+            format!("r#{name}")
+        } else {
+            name.clone()
+        };
         Self {
-            name: name.to_string(),
+            name: name,
+            safe_name,
             ty: quote!(String),
             description: None,
             required: false,
@@ -38,65 +46,55 @@ impl Property {
                 } => {
                     property.description = description.clone();
                     let ty = reference.split("/").last().unwrap().to_string();
-                    // let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
                     property.ty = quote!($ty);
                 }
                 ReferenceOr::Item(item) => {
                     property.nullable = item.schema_data.nullable;
                     property.description = item.schema_data.description.clone();
                     let ty = format!("{}_{name}", model.name).to_upper_camel_case();
-                    match &item.schema_kind {
+                    property.ty = match &item.schema_kind {
                         SchemaKind::Type(Type::String(string)) => {
                             if string.enumeration.is_empty() {
-                                property.ty = quote!(String)
+                                quote!(String)
                             } else {
                                 Model::discover(&ty, item)?;
-                                // let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
-                                property.ty = quote!($ty)
+                                quote!($ty)
                             }
                         }
-                        SchemaKind::Type(Type::Boolean {}) => property.ty = quote!(bool),
+                        SchemaKind::Type(Type::Boolean {}) => quote!(bool),
                         SchemaKind::Type(Type::Integer(integer)) => {
                             if integer.enumeration.is_empty() {
-                                property.ty = quote!(i64)
+                                quote!(i64)
                             } else {
                                 Model::discover(&ty, item)?;
-                                // let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
-                                property.ty = quote!($ty)
+                                quote!($ty)
                             }
                         }
                         SchemaKind::Type(Type::Number(number)) => {
                             if number.enumeration.is_empty() {
-                                property.ty = quote!(f64)
+                                quote!(f64)
                             } else {
                                 Model::discover(&ty, item)?;
-                                // let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
-                                property.ty = quote!($ty)
+                                quote!($ty)
                             }
                         }
                         SchemaKind::Type(Type::Object(_)) => {
                             Model::discover(&ty, item)?;
-                            // let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
-                            property.ty = quote!($ty)
+                            quote!($ty)
                         }
-                        SchemaKind::Type(Type::Array(_)) => {
-                            property.ty = Array::discover(&ty, item)?;
-                        }
+                        SchemaKind::Type(Type::Array(_)) => Array::discover(&ty, item)?,
                         SchemaKind::Any(_) => {
                             Model::discover(&ty, item)?;
-                            // let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
-                            property.ty = quote!($ty)
+                            quote!($ty)
                         }
                         SchemaKind::AllOf { .. } => {
                             Model::discover(&ty, item)?;
-                            // let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
-                            property.ty = quote!($ty);
+                            quote!($ty)
                         }
                         SchemaKind::OneOf { .. } => {
                             let ty = format!("{}_{name}", model.name).to_upper_camel_case();
                             Model::discover(&ty, item)?;
-                            // let ty = rust::import(format!("super::{}", ty.to_snake_case()), ty);
-                            property.ty = quote!($ty);
+                            quote!($ty)
                         }
                         _ => {
                             return err!(
